@@ -1,0 +1,367 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum QuoteStatus {
+  NEW
+  REVIEWED
+  LOAD_CREATED
+  CONVERTED
+  CLOSED
+}
+
+enum LoadStatus {
+  PENDING
+  POSTED
+  BOOKED
+  COMPLETED
+  CANCELED
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  FULFILLED
+  CANCELED
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+}
+
+enum CarrierProfileStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum UserRole {
+  PLATFORM_ADMIN
+  TENANT_ADMIN
+  STAFF
+}
+
+model Tenant {
+  id               String           @id @default(cuid())
+  name             String
+  slug             String           @unique
+  primaryDomain    String?          @db.VarChar(255)
+  subdomain        String?          @db.VarChar(255)
+  isActive         Boolean          @default(true)
+  isMaster         Boolean          @default(false)
+  subscriptionPlan String           @default("free")
+  brandingJson     Json?
+  email            String?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  products         Product[]
+  categories       Category[]
+  quotes           Quote[]
+  loads            Load[]
+  orders           Order[]
+  tags             Tag[]
+  carrierProfiles  CarrierProfile[]
+  users            User[]
+}
+
+model User {
+  id       String @id @default(cuid())
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id])
+
+  fullName     String?
+  email        String  @unique
+  passwordHash String
+
+  role     UserRole @default(TENANT_ADMIN)
+  isActive Boolean  @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId])
+  @@index([role])
+}
+
+model Category {
+  id          String    @id @default(cuid())
+  tenantId    String
+  tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name        String
+  slug        String
+  description String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  products    Product[]
+
+  @@unique([tenantId, slug])
+  @@index([tenantId])
+}
+
+model Product {
+  id              String         @id @default(cuid())
+  tenantId        String
+  tenant          Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  categoryId      String?
+  category        Category?      @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  name            String
+  slug            String
+  description     String?
+  longDescription String?
+  seoTitle        String?
+  metaDescription String?
+  canonicalUrl    String?
+  priceCents      Int
+  sku             String?
+  stock           Int            @default(0)
+  weightKg        Decimal        @db.Decimal(10, 2)
+  isActive        Boolean        @default(true)
+  isFurniture     Boolean        @default(false)
+  isMovingSupply  Boolean        @default(true)
+  stripePriceId   String?
+  metadataJson    Json?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  orderItems      OrderItem[]
+  productTags     ProductTag[]
+  images          ProductImage[]
+
+  @@unique([tenantId, slug])
+  @@index([tenantId])
+  @@index([categoryId])
+}
+
+model ProductImage {
+  id        String   @id @default(cuid())
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  url       String
+  altText   String?
+  position  Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([productId])
+  @@index([position])
+}
+
+model Tag {
+  id          String       @id @default(cuid())
+  tenantId    String
+  tenant      Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name        String
+  slug        String
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  productTags ProductTag[]
+
+  @@unique([tenantId, slug])
+  @@index([tenantId])
+}
+
+model ProductTag {
+  id        String  @id @default(cuid())
+  productId String
+  tagId     String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  tag       Tag     @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, tagId])
+  @@index([tagId])
+}
+
+model Quote {
+  id                      String      @id @default(cuid())
+  tenantId                String
+  tenant                  Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  fullName                String
+  email                   String
+  phone                   String
+  address                 String?
+  fromCountry             String      @default("CA")
+  fromProvince            String?
+  fromState               String?
+  fromCity                String
+  toCountry               String      @default("CA")
+  toProvince              String?
+  toState                 String?
+  toCity                  String
+  moveDate                DateTime?
+  bedrooms                Int?
+  estimatedWeightKg       Decimal?    @db.Decimal(10, 2)
+  estimatedVolume         Decimal?    @db.Decimal(10, 2)
+  comments                String?
+  parsedRooms             String?
+  parsedItemsJson         Json?
+  parsedSuppliesJson      Json?
+  recommendedProductsJson Json?
+  status                  QuoteStatus @default(NEW)
+  attributionSessionId    String?
+  attributionReferrer     String?
+  attributionLandingPage  String?
+  attributionUtmSource    String?
+  attributionUtmMedium    String?
+  attributionUtmCampaign  String?
+  attributionUtmTerm      String?
+  attributionUtmContent   String?
+  createdAt               DateTime    @default(now())
+  updatedAt               DateTime    @updatedAt
+  load                    Load?
+
+  @@index([tenantId])
+  @@index([email])
+  @@index([attributionUtmSource])
+  @@index([attributionUtmCampaign])
+}
+
+model Load {
+  id                  String     @id @default(cuid())
+  tenantId            String
+  tenant              Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  quoteId             String     @unique
+  quote               Quote      @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  status              LoadStatus @default(PENDING)
+  originCountry       String     @default("CA")
+  originProvince      String?
+  originState         String?
+  originCity          String
+  destinationCountry  String     @default("CA")
+  destinationProvince String?
+  destinationState    String?
+  destinationCity     String
+  pickupDate          DateTime?
+  deliveryDate        DateTime?
+  notes               String?
+  estimatedWeightKg   Decimal?   @db.Decimal(10, 2)
+  estimatedVolume     Decimal?   @db.Decimal(10, 2)
+  equipmentType       String?
+  createdAt           DateTime   @default(now())
+  updatedAt           DateTime   @updatedAt
+
+  @@index([tenantId])
+  @@index([status])
+}
+
+model Customer {
+id String @id @default(cuid())
+tenantId String
+name String?
+email String
+phone String?
+address Json?
+createdAt DateTime @default(now())
+updatedAt DateTime @updatedAt
+
+@@unique([tenantId, email], name: "tenantId_email")
+@@index([tenantId])
+}
+
+model TenantLedger {
+id String @id @default(cuid())
+tenantId String
+orderId String @unique
+grossCents Int
+feeCents Int
+netCents Int
+status String @default("pending")
+createdAt DateTime @default(now())
+updatedAt DateTime @updatedAt
+
+order Order @relation(fields: [orderId], references: [id])
+
+@@index([tenantId])
+@@index([status])
+}
+
+model WithdrawalRequest {
+id String @id @default(cuid())
+tenantId String
+amountCents Int
+status String @default("pending")
+createdAt DateTime @default(now())
+updatedAt DateTime @updatedAt
+}
+
+model Order {
+  id                      String      @id @default(cuid())
+  tenantId                String
+  tenant                  Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  stripeCheckoutSessionId String?     @unique
+stripePaymentIntentId String? 
+  customerEmail           String
+  customerName            String?
+  status                  OrderStatus @default(PENDING)
+  paymentStatus PaymentStatus @default(PENDING)
+  adminNotes String? 
+  currency                String      @default("cad")
+  subtotalCents           Int
+  shippingCents           Int
+  totalCents              Int
+  shippingCountry         String      @default("CA")
+  shippingProvince        String?
+  shippingState           String?
+  shippingAddressJson     Json?
+  notes                   String?
+  attributionSessionId    String?
+  attributionReferrer     String?
+  attributionLandingPage  String?
+  attributionUtmSource    String?
+  attributionUtmMedium    String?
+  attributionUtmCampaign  String?
+  attributionUtmTerm      String?
+  attributionUtmContent   String?
+  createdAt               DateTime    @default(now())
+  updatedAt               DateTime    @updatedAt
+  items                   OrderItem[]
+  ledger TenantLedger?
+
+  @@index([tenantId])
+  @@index([customerEmail])
+  @@index([attributionUtmSource])
+  @@index([attributionUtmCampaign])
+}
+
+model OrderItem {
+  id             String   @id @default(cuid())
+  orderId        String
+  order          Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId      String?
+  product        Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  productName    String
+  sku            String?
+  quantity       Int
+  unitPriceCents Int
+  weightKg       Decimal? @db.Decimal(10, 2)
+  metadataJson   Json?
+
+  @@index([orderId])
+}
+
+model CarrierProfile {
+  id             String               @id @default(cuid())
+  tenantId       String
+  tenant         Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  companyName    String
+  contactName    String?
+  email          String
+  phone          String?
+  serviceAreas   String?
+  fleetSize      Int?
+  equipmentTypes String?
+  notes          String?
+  status         CarrierProfileStatus @default(PENDING)
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+
+  @@index([tenantId])
+  @@index([status])
+  @@index([email])
+}

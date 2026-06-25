@@ -1,0 +1,3 @@
+export default function PricingPage() {
+  return <main className="container grid" style={{gap:24}}><section className="card"><h1>Pricing</h1><p className="muted">Start free, then scale into paid plans and future per-load / commission pricing.</p></section><section className="grid grid-2"><div className="card"><span className="badge">Free tier</span><h2>$0</h2><p className="muted">Storefront, quote capture, and basic platform access.</p></div><div className="card"><span className="badge badge-gold">Paid tier</span><h2>Custom</h2><p className="muted">Advanced workflows, tenant branding, conversion tools, and scaling features.</p></div></section></main>;
+}
