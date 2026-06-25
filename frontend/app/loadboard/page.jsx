@@ -1,2 +1,2 @@
-import PublicLoadsPage from '../../../loads/page';
+import PublicLoadsPage from '@/app/loads/page';
 export default PublicLoadsPage;
