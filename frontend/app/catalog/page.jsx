@@ -1,5 +1,5 @@
 'use client';
-
+export const dynamic = 'force-dynamic';
 import { getTenantSlug as resolveTenantSlug } from '@/lib/tenant';
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
