@@ -1,12 +1,11 @@
 'use client';
-export const dynamic = 'force-dynamic';
+
+import { Suspense, useEffect, useMemo, useState } from 'react';
 import { getTenantSlug as resolveTenantSlug } from '@/lib/tenant';
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { apiFetch } from '../../lib/api';
 import CountdownTimer from '../../components/CountdownTimer';
-
 
 function getTenantSlug() {
 return resolveTenantSlug();
@@ -30,7 +29,7 @@ return [];
 }
 }
 
-export default function CatalogPage() {
+function CatalogPageContent() {
   const [products, setProducts] = useState([]);
   const [cart, setCart] = useState([]);
   const [message, setMessage] = useState('');
@@ -275,4 +274,11 @@ export default function CatalogPage() {
       </section>
     </main>
   );
+}
+export default function CatalogPage() {
+return (
+<Suspense fallback={<main style={{ padding: 32 }}>Loading catalog...</main>}>
+<CatalogPageContent />
+</Suspense>
+);
 }
