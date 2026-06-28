@@ -1,25 +1,55 @@
+const RESERVED_SUBDOMAINS = [
+'www',
+'app',
+'admin',
+'api',
+'loadlyx',
+'localhost'
+];
+
 export function getTenantSlug() {
-  if (typeof window === 'undefined') return null;
+if (typeof window === 'undefined') {
+return null;
+}
 
-  const host = window.location.hostname.toLowerCase();
-  const pathname = window.location.pathname || '';
+const host = window.location.hostname;
 
-  if (pathname.startsWith('/tenant/')) {
-    const [, , slug] = pathname.split('/');
-    return slug || null;
-  }
+// localhost fallback
+if (host === 'localhost' || host === '127.0.0.1') {
+return (
+localStorage.getItem('tenantSlug') ||
+localStorage.getItem('tenant') ||
+'demo'
+);
+}
 
-  if (host.endsWith('.loadlyx.com')) {
-    return host.replace('.loadlyx.com', '');
-  }
+// production subdomain: cansask.loadlyx.com
+if (host.endsWith('.loadlyx.com')) {
+const subdomain = host.split('.')[0];
 
-  if (host === 'loadlyx.com' || host === 'www.loadlyx.com') {
-    return null;
-  }
+if (
+subdomain &&
+!RESERVED_SUBDOMAINS.includes(subdomain)
+) {
+localStorage.setItem('tenantSlug', subdomain);
+return subdomain;
+}
+}
 
-  if (host === 'localhost' || host === '127.0.0.1') {
-    return localStorage.getItem('tenantSlug');
-  }
+// vercel fallback
+return (
+localStorage.getItem('tenantSlug') ||
+localStorage.getItem('tenant') ||
+null
+);
+}
 
-  return null;
+export function getTenantHeaders() {
+const tenantSlug = getTenantSlug();
+
+return tenantSlug
+? {
+'x-tenant-slug': tenantSlug
+}
+: {};
 }

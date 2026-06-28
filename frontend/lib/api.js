@@ -1,47 +1,37 @@
-import { getTenantSlug } from './tenant';
+import { getTenantHeaders } from './tenant';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL;
+const API_URL =
+process.env.NEXT_PUBLIC_API_URL ||
+'http://localhost:4000/api';
 
 export async function apiFetch(path, options = {}) {
-const token =
-typeof window !== 'undefined'
-? localStorage.getItem('token')
-: null;
+const url = path.startsWith('http')
+? path
+: `${API_URL}${path}`;
 
-const tenantSlug = getTenantSlug();
-
-const res = await fetch(`${API_URL}${path}`, {
-...options,
-headers: {
+const headers = {
 'Content-Type': 'application/json',
-...(tenantSlug ? { 'x-tenant-slug': tenantSlug } : {}),
-...(token ? { Authorization: `Bearer ${token}` } : {}),
-...(options.headers || {}),
-},
+...getTenantHeaders(),
+...(options.headers || {})
+};
+
+const res = await fetch(url, {
+...options,
+headers
 });
 
-if (res.status === 401) {
-if (typeof window !== 'undefined') {
-localStorage.removeItem('token');
-window.location.href = '/login';
-}
-throw new Error('Unauthorized');
-}
-
-const contentType = res.headers.get('content-type') || '';
-const isJson = contentType.includes('application/json');
-
-let data;
-
-if (isJson) {
-data = await res.json();
-} else {
 const text = await res.text();
-throw new Error(text || 'Non-JSON response returned');
+
+let data = null;
+
+try {
+data = text ? JSON.parse(text) : null;
+} catch {
+throw new Error(text || 'Invalid API response');
 }
 
 if (!res.ok) {
-throw new Error(data.error || 'Request failed');
+throw new Error(data?.error || 'API request failed');
 }
 
 return data;
