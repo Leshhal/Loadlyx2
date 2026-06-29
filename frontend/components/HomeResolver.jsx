@@ -21,7 +21,7 @@ export default function HomeResolver({ initialTenant = null }) {
       }
 
       try {
-        const data = await apiFetch('/tenant/by-slug/${getTenantSlug()}'');
+        const data = await apiFetch('/tenant/by-slug/${getTenantSlug()}');
         if (!cancelled) setTenant(data);
       } catch {
         if (!cancelled) setTenant(null);

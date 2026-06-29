@@ -15,7 +15,7 @@ async function getTenantProfile() {
   if (!tenantSlug) return null;
 
   try {
-    const res = await fetch(`${API_URL}/tenant/public`, {
+    const res = await fetch('${API_URL}/tenant/by-slug/${getTenantSlug()}', {
       headers: { 'x-tenant-slug': tenantSlug },
       cache: 'no-store'
     });
