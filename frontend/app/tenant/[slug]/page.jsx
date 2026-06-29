@@ -7,11 +7,19 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL;
 async function getTenant(slug) {
 const res = await fetch(`${API_URL}/tenant/by-slug/${slug}`, {
 cache: 'no-store',
-headers: { 'Content-Type': 'application/json' }
+headers: {
+'Content-Type': 'application/json',
+'x-tenant-slug': slug
+}
 });
 
 if (res.status === 404) return null;
-if (!res.ok) throw new Error('Failed to load tenant');
+
+if (!res.ok) {
+const text = await res.text();
+console.error('Tenant API failed:', res.status, text);
+throw new Error('Failed to load tenant');
+}
 
 return res.json();
 }
@@ -20,17 +28,26 @@ async function getFeaturedProducts(slug) {
 const res = await fetch(`${API_URL}/products`, {
 cache: 'no-store',
 headers: {
+'Content-Type': 'application/json',
 'x-tenant-slug': slug
 }
 });
 
-if (!res.ok) return [];
+if (!res.ok) {
+const text = await res.text();
+console.error('Products API failed:', res.status, text);
+return [];
+}
 
 const data = await res.json();
 
-// limit to 5 for homepage
-return data.slice(0, 5);
+const products = Array.isArray(data)
+? data
+: data.products || [];
+
+return products.slice(0, 5);
 }
+
 
 function ProductCard({ product, slug }) {
 const imageSrc = product?.imageUrl || product?.image || product?.pageImageUrl || '';
@@ -56,7 +73,7 @@ style={{ textDecoration: 'none', color: 'inherit' }}
 </p>
 
 <div style={styles.productFooter}>
-<strong>${Number(product?.price || 0).toFixed(2)}</strong>
+<strong>${((Number(product?.priceCents || 0)) / 100).toFixed(2)}</strong>
 <span style={styles.productButton}>View</span>
 </div>
 </div>
