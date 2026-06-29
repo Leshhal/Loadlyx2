@@ -52,7 +52,7 @@ function CatalogPageContent() {
 
   useEffect(() => {
     const suffix = activeTag ? `?tag=${encodeURIComponent(activeTag)}` : '';
-    apiFetch(`/products${suffix}`)
+    apiFetch('/products${suffix}')
       .then((rows) => setProducts(rows))
       .catch((err) => setMessage(err.message));
   }, [activeTag]);
