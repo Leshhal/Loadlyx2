@@ -45,7 +45,7 @@ function CatalogPageContent() {
   }, []);
 
   useEffect(() => {
-    apiFetch('/tenant/public')
+    apiFetch('/tenant/by-slug/${getTenantSlug()}')
       .then(setTenantProfile)
       .catch(() => null);
   }, []);
