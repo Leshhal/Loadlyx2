@@ -32,7 +32,28 @@ app.use(helmet({
   crossOriginResourcePolicy: { policy: 'cross-origin' },
   contentSecurityPolicy: false
 }));
-app.use(cors({ origin: env.frontendUrl, credentials: true }));
+const allowedOrigins = [
+'http://localhost:3000',
+'https://loadlyx2.vercel.app',
+'https://loadlyx.com',
+'https://www.loadlyx.com'
+];
+
+app.use(cors({
+origin(origin, callback) {
+if (!origin) return callback(null, true);
+
+if (
+allowedOrigins.includes(origin) ||
+origin.endsWith('.loadlyx.com')
+) {
+return callback(null, true);
+}
+
+return callback(new Error('Not allowed by CORS'));
+},
+credentials: true
+}));
 app.use(morgan('dev'));
 app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: 300 }));
 
