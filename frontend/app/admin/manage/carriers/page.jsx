@@ -2,36 +2,29 @@
 
 import { useEffect, useState } from 'react';
 import { apiFetch } from '../../../../lib/api';
+import { DataTable, ErrorState, FilterBar, LoadingState, PageHeader, StatusBadge } from '@/components/ui/LoadlyxUI';
 
 export default function ManageCarriersPage() {
   const [carriers, setCarriers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [query, setQuery] = useState('');
 
   useEffect(() => {
-    apiFetch('/admin/carriers').then(setCarriers).finally(() => setLoading(false));
+    apiFetch('/admin/carriers').then(setCarriers).catch((err) => setError(err.message)).finally(() => setLoading(false));
   }, []);
 
-  return (
-    <main className="container grid" style={{ gap: 24 }}>
-      <section className="card">
-        <h1>Carrier profiles</h1>
-        <p className="muted">Phase 1.5 intake for mover onboarding before the lead marketplace is switched on.</p>
-      </section>
-      <section className="card">
-        {loading ? <p className="muted">Loading carriers…</p> : carriers.length === 0 ? <p className="muted">No carrier profiles yet.</p> : (
-          <div className="grid" style={{ gap: 16 }}>
-            {carriers.map((carrier) => (
-              <article key={carrier.id} className="card">
-                <div className="badge">{carrier.status}</div>
-                <h3>{carrier.companyName}</h3>
-                <p className="muted">{carrier.contactName || 'No contact name'} · {carrier.email}</p>
-                <p className="muted">Service areas: {carrier.serviceAreas || 'Not provided'}</p>
-                <p className="muted">Fleet size: {carrier.fleetSize ?? 'Not provided'} · Equipment: {carrier.equipmentTypes || 'Not provided'}</p>
-              </article>
-            ))}
-          </div>
-        )}
-      </section>
-    </main>
-  );
+  const visible = carriers.filter((carrier) => `${carrier.companyName} ${carrier.contactName} ${carrier.email} ${carrier.serviceAreas}`.toLowerCase().includes(query.toLowerCase()));
+  const columns = [
+    { key: 'company', label: 'Carrier', render: (carrier) => <><strong>{carrier.companyName}</strong><div className="muted small">{carrier.contactName || 'No contact name'} · {carrier.email}</div></> },
+    { key: 'coverage', label: 'Coverage', render: (carrier) => carrier.serviceAreas || 'Not provided' },
+    { key: 'capacity', label: 'Capacity', render: (carrier) => <>{carrier.fleetSize ?? '—'} vehicles<div className="muted small">{carrier.equipmentTypes || 'Equipment not provided'}</div></> },
+    { key: 'status', label: 'Status', render: (carrier) => <StatusBadge tone={carrier.status === 'APPROVED' ? 'success' : 'warning'}>{carrier.status}</StatusBadge> }
+  ];
+
+  return <main className="container grid" style={{ gap: 24 }}>
+    <PageHeader eyebrow="Network operations" title="Carrier profiles" description="Review carrier capacity, coverage and onboarding status from one operational view." />
+    <FilterBar resultLabel={`${visible.length} of ${carriers.length} carriers`}><label className="field"><span>Search carriers</span><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Company, contact or region" /></label></FilterBar>
+    <section className="card">{loading ? <LoadingState label="Loading carrier network" /> : error ? <ErrorState message={error} /> : <DataTable columns={columns} rows={visible} emptyTitle="No carrier profiles found" emptyDescription="New carrier applications will appear here." />}</section>
+  </main>;
 }

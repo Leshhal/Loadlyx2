@@ -25,7 +25,7 @@ data: null
 return;
 }
 
-apiFetch(`/orders/session/${sessionId}`)
+apiFetch(`/orders/checkout-session/${sessionId}`)
 .then((data) =>
 setState({
 loading: false,
@@ -97,12 +97,8 @@ gap: 12,
 marginTop: 20
 }}
 >
-<Link className="btn" href="/catalog">
-Back to store
-</Link>
-
-<Link className="btn secondary" href="/admin/dashboard">
-Open admin dashboard
+<Link className="btn" href={state.data?.order?.tenant?.slug ? `/tenant/${state.data.order.tenant.slug}/catalog` : '/catalog'}>
+Continue shopping
 </Link>
 </div>
 </div>

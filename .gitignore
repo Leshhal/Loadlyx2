@@ -3,4 +3,13 @@ node_modules
 dist
 .env
 .env.local
+.env.*.local
+.env.docker.local
 .prisma
+runtime/
+loadlyx_runtime/
+logs/
+*.log
+*.lnk
+New Text Document.txt
+TESTFLAG

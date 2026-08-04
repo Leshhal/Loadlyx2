@@ -45,6 +45,15 @@ function sanitizeBranding(input = {}) {
     trustCopy: String(input.trustCopy || '').trim(),
     serviceHeading: String(input.serviceHeading || '').trim(),
     pageImageUrl: String(input.pageImageUrl || '').trim(),
+    footerHeading: String(input.footerHeading || '').trim(),
+    footerDescription: String(input.footerDescription || '').trim(),
+    contactEmail: String(input.contactEmail || '').trim(),
+    contactPhone: String(input.contactPhone || '').trim(),
+    contactAddress: String(input.contactAddress || '').trim(),
+    facebookUrl: String(input.facebookUrl || '').trim(),
+    instagramUrl: String(input.instagramUrl || '').trim(),
+    xUrl: String(input.xUrl || '').trim(),
+    linkedinUrl: String(input.linkedinUrl || '').trim(),
     tenantPages: sanitizeTenantPages(input.tenantPages || []),
 
     // merchandising fields intentionally kept in data model but edited from Product / Store admin

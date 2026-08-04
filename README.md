@@ -1,30 +1,47 @@
-# Loadlyx Phase 1 SaaS + Stripe Active
+# Loadlyx Platform
 
-This package is the current Phase 1 baseline for Loadlyx.
+Loadlyx is a multi-tenant logistics SaaS, storefront, and freight marketplace platform. This repository contains the current integrated application release—not the former Phase 1 baseline.
 
-## Included
-- Multi-tenant architecture
-- SEO-ready store with product pages, tags, images, and schema markup
-- Quote system with rules-based upsells
-- Automatic pending load generation from quotes
-- Attribution tracking on quotes and orders
-- SaaS-style admin dashboard and management console
-- Stripe Checkout integration for store orders
-- Stripe webhook support for paid order confirmation
+## Current platform
 
-## Run locally
+- Multi-tenant SaaS workspaces and tenant-isolated storefronts
+- Tenant subdomain and path-based storefront resolution
+- Authentication, session handling, protected routes, and role-aware access
+- Platform administration and tenant operations dashboards
+- CRM, quotes, customers, dispatch, products, inventory, orders, and fulfilment
+- Store checkout, Stripe integration, payment settings, ledgers, and withdrawals
+- Freight load board with customer, broker, and carrier workflows
+- Marketplace simulation controls and reputation tooling
+- Store themes, direct product-image uploads, SEO, and editable tenant content
+- YXE Totes rental, inventory, shipping, and security-map foundations
+- AI services, approval policies, workflows, event processing, and recommendations
+- Crypto checkout provider abstraction and payment-state handling
+
+## Local development
+
+The repository includes guided launchers:
+
+- Windows: `run_loadlyx_auto.bat`
+- macOS/Linux: `run_loadlyx_auto.sh`
+
+The launcher prepares project-specific environment files, starts the dedicated PostgreSQL container, installs dependencies, prepares Prisma, and starts the backend and frontend.
+
+Manual startup is also supported.
+
 ### Backend
+
 ```bash
 cd backend
 cp .env.example .env
 npm install
 npx prisma generate
-npx prisma migrate dev --name init
+npx prisma migrate deploy
 npm run prisma:seed
 npm run dev
 ```
 
 ### Frontend
+
 ```bash
 cd frontend
 cp .env.local.example .env.local
@@ -32,34 +49,27 @@ npm install
 npm run dev
 ```
 
-### Start Stripe webhook forwarding
+Local URLs:
+
+- Frontend: `http://localhost:3000`
+- Backend API: `http://localhost:4000/api`
+- Platform administration: `http://localhost:3000/admin/dashboard`
+- Tenant example: `http://localhost:3000/tenant/demo`
+- Load board: `http://localhost:3000/loadboard`
+
+## Verification
+
 ```bash
-stripe listen --forward-to localhost:4000/api/stripe/webhook
+npm test --prefix backend
+npm run check --prefix backend
+npm test --prefix frontend
+npm run build --prefix frontend
 ```
 
-Open:
-- Frontend: `http://localhost:3000`
-- Backend: `http://localhost:4000`
-- Admin dashboard: `http://localhost:3000/admin/dashboard`
+The current release was verified with 53 backend tests, 6 frontend tenant-routing tests, backend syntax checks, and a successful 60-route production frontend build.
 
+## Configuration and security
 
-## Roadmap update
+Copy the supplied example environment files and provide environment-specific credentials locally or through the deployment provider. Never commit `.env` files, payment secrets, OAuth credentials, database passwords, runtime logs, or generated build output.
 
-### Phase 1.5
-- Public load feed at `/loads` and `/loads/[id]`
-- Carrier signup placeholder at `/carriers/signup`
-- Public-load SEO and carrier interest capture
-
-### Phase 2
-- Mover lead marketplace and lead unlocks
-- Carrier profiles and carrier dashboard
-- Public feed monetization and claim workflow
-
-### Phase 3
-- Carrier matching engine
-- Carrier bidding
-- Stripe Connect marketplace payouts
-
-### Phase 4
-- Quote widget network
-- Partner referrals and affiliate payouts
+See the release reports in the repository root for implementation details, migrations, operational notes, and manual QA coverage.

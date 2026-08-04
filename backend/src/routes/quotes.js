@@ -1,19 +1,19 @@
-import { resolveTenant } from '../lib/tenant.js';
 import { Router } from 'express';
 import { prisma } from '../db/prisma.js';
 import { z } from 'zod';
 import { parseQuoteComment } from '../services/upsellService.js';
+import { requireAuth } from '../middleware/requireauth.js';
 
 const router = Router();
 
-router.get('/', async (req, res) => {
+router.get('/', requireAuth, async (req, res) => {
 try {
-const tenant = await resolveTenant(req);
+const platformRole = ['SUPER_ADMIN', 'PLATFORM_ADMIN', 'ADMIN', 'SUPPORT'].includes(req.user.role);
+const tenantId = platformRole ? (typeof req.query.tenantId === 'string' ? req.query.tenantId : null) : req.user.tenantId;
+if (!tenantId && !platformRole) return res.status(403).json({ error: 'Tenant account required' });
 
 const quotes = await prisma.quote.findMany({
-where: {
-tenantId: tenant.id
-},
+where: tenantId ? { tenantId } : {},
 orderBy: {
 createdAt: 'desc'
 }

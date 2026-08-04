@@ -5,20 +5,41 @@ import { env } from '../config/env.js';
 import { prisma } from '../db/prisma.js';
 import { z } from 'zod';
 import { calculateShipping } from '../utils/shipping.js';
+import { recordRefund } from '../services/ledgerService.js';
 
 const router = Router();
 const stripe = env.stripeSecretKey ? new Stripe(env.stripeSecretKey) : null;
+const PLATFORM_ROLES = new Set(['SUPER_ADMIN', 'PLATFORM_ADMIN', 'ADMIN', 'SUPPORT']);
+
+function checkoutOrigin(req) {
+  const fallback = String(env.frontendUrl || 'http://localhost:3000').replace(/\/$/, '');
+  try {
+    const origin = new URL(String(req.headers.origin || fallback));
+    const rootDomain = process.env.ROOT_DOMAIN || 'loadlyx.com';
+    const allowed = ['http:', 'https:'].includes(origin.protocol) && (
+      ['localhost', '127.0.0.1'].includes(origin.hostname) ||
+      origin.hostname === rootDomain ||
+      origin.hostname.endsWith(`.${rootDomain}`) ||
+      origin.hostname.endsWith('.vercel.app')
+    );
+    return allowed ? origin.origin : fallback;
+  } catch { return fallback; }
+}
+
+function orderScope(req) {
+  if (PLATFORM_ROLES.has(req.user?.role)) return {};
+  return req.user?.tenantId ? { tenantId: req.user.tenantId } : null;
+}
 
 router.get('/', async (req, res) => {
 try {
-const tenantId = req.user?.tenantId;
-
-if (!tenantId) {
+const scope = orderScope(req);
+if (!scope) {
 return res.status(401).json({ error: 'Unauthorized' });
 }
 
 const orders = await prisma.order.findMany({
-where: { tenantId },
+where: scope,
 orderBy: { createdAt: 'desc' },
 include: {
 items: true
@@ -34,16 +55,15 @@ res.status(500).json({ error: 'Failed to fetch orders' });
 
 router.get('/:id', async (req, res) => {
 try {
-const tenantId = req.user?.tenantId;
-
-if (!tenantId) {
+const scope = orderScope(req);
+if (!scope) {
 return res.status(401).json({ error: 'Unauthorized' });
 }
 
 const order = await prisma.order.findFirst({
 where: {
 id: req.params.id,
-tenantId
+...scope
 },
 include: {
 items: true
@@ -63,9 +83,8 @@ res.status(500).json({ error: 'Failed to fetch order' });
 
 router.put('/:id', async (req, res) => {
 try {
-const tenantId = req.user?.tenantId;
-
-if (!tenantId) {
+const scope = orderScope(req);
+if (!scope) {
 return res.status(401).json({ error: 'Unauthorized' });
 }
 
@@ -74,7 +93,7 @@ const { status, paymentStatus, adminNotes } = req.body;
 const existing = await prisma.order.findFirst({
 where: {
 id: req.params.id,
-tenantId
+...scope
 }
 });
 
@@ -101,7 +120,42 @@ res.status(500).json({ error: 'Failed to update order' });
 }
 });
 
-router.get('/session/:sessionId', async (req, res) => {
+router.post('/:id/fulfillment', async (req, res) => {
+  const scope = orderScope(req);
+  if (!scope) return res.status(401).json({ error: 'Unauthorized' });
+  const input = z.object({ action: z.enum(['CONFIRM', 'PROCESS', 'SHIP', 'DELIVER', 'CANCEL']), shippingCarrier: z.string().trim().max(80).optional(), trackingNumber: z.string().trim().max(120).optional(), note: z.string().trim().max(1000).optional() }).parse(req.body);
+  const order = await prisma.order.findFirst({ where: { id: req.params.id, ...scope } });
+  if (!order) return res.status(404).json({ error: 'Order not found' });
+  if (input.action === 'SHIP' && !input.trackingNumber) return res.status(400).json({ error: 'Tracking number is required to mark an order shipped' });
+  const states = { CONFIRM: { fulfillmentStatus: 'CONFIRMED', confirmedAt: new Date() }, PROCESS: { fulfillmentStatus: 'PROCESSING' }, SHIP: { fulfillmentStatus: 'SHIPPED', shippedAt: new Date(), shippingCarrier: input.shippingCarrier || null, trackingNumber: input.trackingNumber }, DELIVER: { fulfillmentStatus: 'DELIVERED', deliveredAt: new Date(), status: 'FULFILLED' }, CANCEL: { fulfillmentStatus: 'CANCELED', status: 'CANCELED' } };
+  const updated = await prisma.order.update({ where: { id: order.id }, data: { ...states[input.action], ...(input.note ? { adminNotes: [order.adminNotes, input.note].filter(Boolean).join('\n') } : {}) }, include: { items: true } });
+  return res.json(updated);
+});
+
+router.post('/:id/refund', async (req, res) => {
+  const scope = orderScope(req);
+  if (!scope) return res.status(401).json({ error: 'Unauthorized' });
+  const input = z.object({ amountCents: z.number().int().positive(), reason: z.string().trim().min(3).max(500), manual: z.boolean().default(false) }).parse(req.body);
+  const order = await prisma.order.findFirst({ where: { id: req.params.id, ...scope } });
+  if (!order) return res.status(404).json({ error: 'Order not found' });
+  const remaining = order.totalCents - order.refundedCents;
+  if (input.amountCents > remaining) return res.status(409).json({ error: 'Refund exceeds the remaining refundable amount', remainingCents: remaining });
+  if (!order.stripePaymentIntentId && !input.manual) return res.status(409).json({ error: 'This order has no processor payment. Confirm a manual refund instead.' });
+  let providerRefund = null;
+  if (order.stripePaymentIntentId) {
+    if (!stripe) return res.status(503).json({ error: 'Stripe is not configured' });
+    providerRefund = await stripe.refunds.create({ payment_intent: order.stripePaymentIntentId, amount: input.amountCents, reason: 'requested_by_customer', metadata: { orderId: order.id, note: input.reason } });
+  }
+  const original = await prisma.financialTransaction.findFirst({ where: { referenceType: 'ORDER', referenceId: order.id, kind: 'STORE_SALE' }, include: { ledgerEntries: true } });
+  const result = await prisma.$transaction(async (tx) => {
+    if (original) await recordRefund(tx, original, input.amountCents, input.reason, providerRefund?.id || `manual-${Date.now()}`);
+    return tx.order.update({ where: { id: order.id }, data: { refundedCents: { increment: input.amountCents }, ...(input.amountCents === remaining ? { paymentStatus: 'REFUNDED' } : {}), adminNotes: [order.adminNotes, `Refund ${input.amountCents} cents: ${input.reason}${input.manual ? ' (manual)' : ''}`].filter(Boolean).join('\n') }, include: { items: true } });
+  });
+  return res.json({ order: result, providerRefundId: providerRefund?.id || null, ledgerRecorded: Boolean(original) });
+});
+
+router.get('/checkout-session/:sessionId', async (req, res, next) => {
+ try {
   if (!stripe) {
     return res.status(400).json({ error: 'Stripe is not configured.' });
   }
@@ -113,7 +167,7 @@ router.get('/session/:sessionId', async (req, res) => {
   const order = session.metadata?.orderId
     ? await prisma.order.findFirst({
         where: { id: session.metadata.orderId, tenantId: req.tenant.id },
-        include: { items: true }
+        include: { items: true, tenant: { select: { slug: true, name: true } } }
       })
     : null;
 
@@ -128,11 +182,13 @@ router.get('/session/:sessionId', async (req, res) => {
     },
     order
   });
+ } catch (error) { next(error); }
 });
 
 
 
-router.post('/checkout', async (req, res) => {
+router.post('/checkout', async (req, res, next) => {
+ try {
   const schema = z.object({
     customerEmail: z.string().email(),
     customerName: z.string().optional(),
@@ -224,8 +280,8 @@ router.post('/checkout', async (req, res) => {
 
   const session = await stripe.checkout.sessions.create({
     mode: 'payment',
-    success_url: `${env.frontendUrl}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `${env.frontendUrl}/checkout/cancel`,
+    success_url: `${checkoutOrigin(req)}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${checkoutOrigin(req)}/checkout/cancel`,
     customer_email: input.customerEmail,
     billing_address_collection: 'auto',
     shipping_address_collection: {
@@ -264,6 +320,10 @@ router.post('/checkout', async (req, res) => {
   });
 
   res.status(201).json({ orderId: order.id, checkoutUrl: session.url, shipping, order });
+ } catch (error) {
+   if (error instanceof z.ZodError) return res.status(400).json({ error: 'Invalid checkout request', details: error.issues });
+   next(error);
+ }
 });
 
 export default router;

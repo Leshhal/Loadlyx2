@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { apiFetch } from '../../lib/api';
 import CountdownTimer from '../../components/CountdownTimer';
+import { Drawer, EmptyState } from '../../components/ui/LoadlyxUI';
 
 function getTenantSlug() {
 return resolveTenantSlug();
@@ -30,6 +31,8 @@ return [];
 }
 
 function CatalogPageContent() {
+  const tenantSlug = getTenantSlug();
+  const tenantBase = tenantSlug ? `/tenant/${tenantSlug}` : '';
   const [products, setProducts] = useState([]);
   const [cart, setCart] = useState([]);
   const [message, setMessage] = useState('');
@@ -39,13 +42,20 @@ function CatalogPageContent() {
   const activeTag = searchParams.get('tag');
   const addProductId = searchParams.get('add');
   const [activeCategory, setActiveCategory] = useState('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [activeRegion, setActiveRegion] = useState('all');
+  const [priceBand, setPriceBand] = useState('all');
+  const [wishlist, setWishlist] = useState([]);
+  const [quickView, setQuickView] = useState(null);
+  const [cartOpen, setCartOpen] = useState(false);
 
   useEffect(() => {
     setCart(loadCart());
+    try { setWishlist(JSON.parse(window.localStorage.getItem('loadlyx_store_wishlist') || '[]')); } catch {}
   }, []);
 
   useEffect(() => {
-    apiFetch('/tenant/by-slug/${getTenantSlug()}')
+    apiFetch(`/tenant/by-slug/${getTenantSlug()}`)
       .then(setTenantProfile)
       .catch(() => null);
   }, []);
@@ -82,17 +92,39 @@ function CatalogPageContent() {
     });
   }
 
+  function toggleWishlist(productId) {
+    setWishlist((current) => { const next = current.includes(productId) ? current.filter((id) => id !== productId) : [...current, productId]; window.localStorage.setItem('loadlyx_store_wishlist', JSON.stringify(next)); return next; });
+  }
+
+  function addKitToCart(items) {
+    setCart((current) => {
+      let next = [...current];
+      items.forEach((product) => { const existing = next.find((item) => item.productId === product.id); next = existing ? next.map((item) => item.productId === product.id ? { ...item, quantity: item.quantity + 1, product } : item) : [...next, { productId: product.id, quantity: 1, product }]; });
+      saveCart(next); return next;
+    });
+    setMessage(`${items.length} recommended products added to your cart.`);
+    setCartOpen(true);
+  }
+
   const categories = useMemo(() => {
     const rows = products.map((product) => product.category?.name).filter(Boolean);
     return ['all', ...new Set(rows)];
   }, [products]);
 
   const visibleProducts = useMemo(() => {
-    if (activeCategory === 'all') return products;
-    return products.filter((product) => product.category?.name === activeCategory);
-  }, [products, activeCategory]);
+    return products.filter((product) => {
+      const categoryMatch = activeCategory === 'all' || product.category?.name === activeCategory;
+      const searchMatch = !searchQuery || `${product.name} ${product.description} ${product.category?.name || ''}`.toLowerCase().includes(searchQuery.toLowerCase());
+      const region = String(product.region || product.country || product.tenant?.country || '').toUpperCase();
+      const regionMatch = activeRegion === 'all' || !region || region === activeRegion;
+      const price = Number(product.priceCents || 0);
+      const priceMatch = priceBand === 'all' || (priceBand === 'under50' && price < 5000) || (priceBand === '50to150' && price >= 5000 && price <= 15000) || (priceBand === 'over150' && price > 15000);
+      return categoryMatch && regionMatch && priceMatch && searchMatch;
+    });
+  }, [products, activeCategory, activeRegion, priceBand, searchQuery]);
 
   const subtotal = useMemo(() => cart.reduce((sum, item) => sum + item.product.priceCents * item.quantity, 0), [cart]);
+  const recommendedKit = useMemo(() => { const chosen = []; const seen = new Set(); products.forEach((product) => { const key = product.category?.name || product.id; if (!seen.has(key) && chosen.length < 4 && Number(product.stock ?? 1) !== 0) { seen.add(key); chosen.push(product); } }); return chosen; }, [products]);
   const shippingPreview = useMemo(() => subtotal ? 'Calculated at secure checkout' : 'Select products to calculate shipping', [subtotal]);
   const branding = tenantProfile?.branding || {};
   const freeShippingThreshold = Number(branding.freeShippingThreshold || 0);
@@ -106,11 +138,15 @@ function CatalogPageContent() {
   function startCheckout() {
     if (!cart.length) return;
     saveCart(cart);
-    router.push('/checkout');
+    router.push(tenantSlug ? `${tenantBase}/checkout?cart=1` : '/checkout');
   }
 
   return (
-    <main className="container grid" style={{ gap: 24 }}>
+    <main className="container grid lx-storefront" style={{ gap: 24 }}>
+      <section className="lx-store-hero">
+        <div><span className="lx-eyebrow">Moving supplies, connected to the move</span><h1>{branding.brandName || tenantProfile?.name || 'The Loadlyx Store'}</h1><p>Shop protection, packing, and moving essentials from a tenant storefront designed to work alongside quotes, bookings, and delivery.</p><div className="lx-store-search"><span aria-hidden="true">⌕</span><input type="search" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search products and moving supplies" aria-label="Search storefront products" /></div><div className="lx-trust-row"><span>✓ Tenant storefront</span><span>✓ Secure checkout</span><span>✓ Inventory-aware</span><button type="button" className="btn ghost" onClick={() => setCartOpen(true)}>Cart ({cart.reduce((sum, item) => sum + item.quantity, 0)})</button></div></div>
+        <aside className="lx-concierge-card"><span className="lx-eyebrow">Move-kit concierge</span><h2>Not sure what your move needs?</h2><p>Start with the move details already supported by Loadlyx. Your quote can guide a coordinated supply plan without guessing through the catalog.</p><Link className="btn" href={`${tenantBase}/quote`}>Describe your move</Link><small>Recommendations require review before products are added.</small></aside>
+      </section>
       <section className="catalog-layout">
         <aside className="card filter-panel">
           <div className="panel-header">
@@ -132,24 +168,24 @@ function CatalogPageContent() {
           <div className="field" style={{ marginTop: 16 }}>
             <label>Region</label>
             <div className="filter-list">
-              <button type="button">Canada</button>
-              <button type="button">United States</button>
+              <button type="button" className={activeRegion === 'CA' ? 'active' : ''} onClick={() => setActiveRegion(activeRegion === 'CA' ? 'all' : 'CA')}>Canada</button>
+              <button type="button" className={activeRegion === 'US' ? 'active' : ''} onClick={() => setActiveRegion(activeRegion === 'US' ? 'all' : 'US')}>United States</button>
             </div>
           </div>
 
           <div className="field">
             <label>Tagged filter</label>
             {activeTag ? (
-              <div className="badge">{activeTag} <Link href="/catalog" style={{ marginLeft: 6 }}>clear</Link></div>
+              <div className="badge">{activeTag} <Link href={`${tenantBase}/catalog`} style={{ marginLeft: 6 }}>clear</Link></div>
             ) : <div className="muted small">Browse tags on product cards to refine inventory.</div>}
           </div>
 
           <div className="field">
             <label>Price</label>
             <div className="filter-list">
-              <button type="button">$0 – $50</button>
-              <button type="button">$50 – $150</button>
-              <button type="button">$150+</button>
+              <button type="button" className={priceBand === 'under50' ? 'active' : ''} onClick={() => setPriceBand(priceBand === 'under50' ? 'all' : 'under50')}>$0 – $50</button>
+              <button type="button" className={priceBand === '50to150' ? 'active' : ''} onClick={() => setPriceBand(priceBand === '50to150' ? 'all' : '50to150')}>$50 – $150</button>
+              <button type="button" className={priceBand === 'over150' ? 'active' : ''} onClick={() => setPriceBand(priceBand === 'over150' ? 'all' : 'over150')}>$150+</button>
             </div>
           </div>
         </aside>
@@ -177,10 +213,13 @@ function CatalogPageContent() {
               </div>
             ) : null}
 
+            {recommendedKit.length ? <section className="lx-dynamic-kit"><div><span className="lx-eyebrow">Dynamic moving kit</span><h2>Balanced essentials from current inventory</h2><p>This editable recommendation selects one available product from up to four catalog categories. Review every item before checkout.</p><div>{recommendedKit.map((product) => <span key={product.id}>{product.name}</span>)}</div></div><aside><strong>${(recommendedKit.reduce((sum, product) => sum + product.priceCents, 0) / 100).toFixed(2)}</strong><button type="button" className="btn" onClick={() => addKitToCart(recommendedKit)}>Add kit to cart</button><Link href={`${tenantBase}/quote`}>Personalize from a move quote</Link></aside></section> : null}
+
             <div className="store-products" style={{ marginTop: 18 }}>
               {visibleProducts.map((product) => (
                 <article className="card product-card" key={product.id}>
                   <span className="badge">{product.category?.name || 'Uncategorized'}</span>
+                  <div className="product-urgency">{(product.badges || []).filter((badge) => badge.badgeType !== 'PERCENTAGE' || product.salePriceCents).slice(0, 2).map((badge) => <span key={badge.id} className="badge badge-gold" title={badge.tooltip || ''}>{badge.label}</span>)}</div>
                   <div className="product-image">
                     {product.primaryImage?.url ? (
                       <img src={product.primaryImage.url} alt={product.primaryImage.altText || product.name} loading="lazy" />
@@ -189,29 +228,33 @@ function CatalogPageContent() {
                   <div className="product-meta">
                     <div>
                       <h3 className="product-title">{product.name}</h3>
-                      <div className="rating">★★★★★ <span className="muted">(catalog)</span></div>
+                      {product.ratingCount ? <div className="rating"><span aria-label={`${Number(product.averageRating || 0).toFixed(1)} out of 5`}>★ {Number(product.averageRating || 0).toFixed(1)}</span> <span className="muted">({product.ratingCount})</span></div> : <div className="muted small">No verified reviews yet</div>}
                     </div>
-                    <div className="price">${(product.priceCents / 100).toFixed(2)}</div>
+                    <div className="price">{product.productType === 'RENTAL' ? `$${(Number(product.weeklyRateCents || product.priceCents) / 100).toFixed(2)}/week` : `$${(product.priceCents / 100).toFixed(2)}`}</div>
                   </div>
                   <div className="product-urgency">
                     {lowStockEnabled && product.stock > 0 && product.stock <= 5 ? <span className="badge badge-gold">Only {product.stock} left</span> : null}
                     {freeShippingEnabled ? <span className="badge">Free shipping over ${freeShippingThreshold}</span> : null}
                     {bundleDiscountsEnabled ? <span className="badge">Bundle savings available</span> : null}
+                    {/tote/i.test(`${product.name} ${(product.tags || []).map((tag) => tag.name).join(' ')}`) ? <span className="badge">Reusable tote</span> : null}
                   </div>
                   <p className="muted" style={{ margin: 0 }}>{product.description}</p>
+                  {product.productType === 'RENTAL' ? <div className="tenant-trust-banner"><strong>Two-week minimum: ${(Number(product.minimumChargeCents || product.priceCents) / 100).toFixed(2)}</strong><span className="muted">Move, delivery, and pickup dates are confirmed during rental booking.</span></div> : null}
                   <div className="muted small">Weight: {Number(product.weightKg).toFixed(2)} kg</div>
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                     {(product.tags || []).map((tag) => (
-                      <Link key={tag.id} href={`/catalog?tag=${tag.slug}`} className="badge">{tag.name}</Link>
+                      <Link key={tag.id} href={`${tenantBase}/catalog?tag=${tag.slug}`} className="badge">{tag.name}</Link>
                     ))}
                   </div>
                   <div className="product-actions">
                     <button className="btn" onClick={() => addToCart(product)}>Add to Cart</button>
-                    <Link className="btn secondary" href={`/products/${product.slug}`}>View Product</Link>
+                    <button className="btn secondary" type="button" onClick={() => setQuickView(product)}>Quick view</button>
+                    <button className="btn ghost" type="button" onClick={() => toggleWishlist(product.id)} aria-pressed={wishlist.includes(product.id)}>{wishlist.includes(product.id) ? 'Saved' : 'Wishlist'}</button>
                   </div>
                 </article>
               ))}
             </div>
+            {!visibleProducts.length ? <EmptyState title="No matching products" description="Change the search or filters to see more of the catalog." /> : null}
           </section>
 
           <section className="card store-promo">
@@ -265,13 +308,15 @@ function CatalogPageContent() {
 
                 <div className="action-row" style={{ marginTop: 18 }}>
                   <button className="btn" onClick={startCheckout}>Continue to Secure Checkout</button>
-                  <Link className="btn secondary" href="/quote">Need a move quote?</Link>
+                  <Link className="btn secondary" href={`${tenantBase}/quote`}>Need a move quote?</Link>
                 </div>
               </>
             )}
           </section>
         </div>
       </section>
+      <Drawer open={Boolean(quickView)} title={quickView?.name} description={quickView?.category?.name || 'Product details'} onClose={() => setQuickView(null)} footer={quickView ? <><Link className="btn secondary" href={tenantSlug ? `${tenantBase}/catalog/${quickView.slug}` : `/products/${quickView.slug}`}>Full details</Link><button className="btn" type="button" onClick={() => { addToCart(quickView); setQuickView(null); }}>Add to cart</button></> : null}>{quickView ? <div className="grid" style={{ gap: 18 }}>{quickView.primaryImage?.url ? <img className="lx-quick-image" src={quickView.primaryImage.url} alt={quickView.primaryImage.altText || quickView.name} /> : null}<strong className="price">${(quickView.priceCents / 100).toFixed(2)}</strong><p className="muted">{quickView.description}</p><div className="lx-detail-grid"><div><span>Stock</span><strong>{quickView.stock ?? 'Not listed'}</strong></div><div><span>Weight</span><strong>{Number(quickView.weightKg || 0).toFixed(2)} kg</strong></div></div></div> : null}</Drawer>
+      <Drawer open={cartOpen} title="Your moving-supply cart" description={`${cart.reduce((sum, item) => sum + item.quantity, 0)} items`} onClose={() => setCartOpen(false)} footer={cart.length ? <button className="btn" type="button" onClick={startCheckout}>Secure checkout</button> : null}>{cart.length ? <div className="grid" style={{ gap: 12 }}>{cart.map((item) => <div className="summary-line" key={item.productId}><div><strong>{item.product.name}</strong><div className="muted small">Quantity {item.quantity}</div></div><div><strong>${((item.product.priceCents * item.quantity) / 100).toFixed(2)}</strong><button type="button" className="btn ghost" onClick={() => removeFromCart(item.productId)}>Remove</button></div></div>)}<div className="total-line"><span>Subtotal</span><span>${(subtotal / 100).toFixed(2)}</span></div></div> : <EmptyState title="Your cart is empty" description="Add an individual product or a recommended moving kit." />}</Drawer>
     </main>
   );
 }

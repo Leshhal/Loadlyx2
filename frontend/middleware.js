@@ -1,29 +1,25 @@
 import { NextResponse } from 'next/server';
-
-const RESERVED_SUBDOMAINS = [
-'www',
-'app',
-'admin',
-'api',
-'loadlyx'
-];
+import { isLoadboardHostname, resolveTenantFromHostname } from './lib/tenantHost';
 
 export function middleware(request) {
 const host = request.headers.get('host') || '';
-const hostname = host.split(':')[0].toLowerCase();
 const url = request.nextUrl.clone();
+const rootDomain = process.env.NEXT_PUBLIC_ROOT_DOMAIN || 'loadlyx.com';
 
-const isLoadlyxSubdomain =
-hostname.endsWith('.loadlyx.com') &&
-hostname !== 'www.loadlyx.com';
-
-if (!isLoadlyxSubdomain) {
-return NextResponse.next();
+if (isLoadboardHostname(host, { rootDomain })) {
+  if (url.pathname.startsWith('/_next') || url.pathname.startsWith('/api') || url.pathname.startsWith('/favicon')) return NextResponse.next();
+  const loadboardRoutes = { '/': '/loadboard', '/login': '/loadboard/login', '/signup': '/loadboard/signup' };
+  url.pathname = loadboardRoutes[url.pathname] || url.pathname;
+  const response = NextResponse.rewrite(url);
+  response.headers.set('x-loadlyx-site', 'loadboard');
+  return response;
 }
+const subdomain = resolveTenantFromHostname(host, {
+  rootDomain,
+  allowVercelPreview: process.env.VERCEL_ENV === 'preview'
+});
 
-const subdomain = hostname.replace('.loadlyx.com', '');
-
-if (!subdomain || RESERVED_SUBDOMAINS.includes(subdomain)) {
+if (!subdomain) {
 return NextResponse.next();
 }
 

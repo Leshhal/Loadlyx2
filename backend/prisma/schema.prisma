@@ -37,6 +37,15 @@ enum PaymentStatus {
   REFUNDED
 }
 
+enum FulfillmentStatus {
+  UNCONFIRMED
+  CONFIRMED
+  PROCESSING
+  SHIPPED
+  DELIVERED
+  CANCELED
+}
+
 enum CarrierProfileStatus {
   PENDING
   APPROVED
@@ -44,113 +53,630 @@ enum CarrierProfileStatus {
 }
 
 enum UserRole {
+  SUPER_ADMIN
   PLATFORM_ADMIN
+  ADMIN
+  SUPPORT
   TENANT_ADMIN
+  TENANT_STAFF
+  MARKETPLACE_USER
+  BROKER
+  CARRIER
   STAFF
 }
 
+enum SubscriptionPlanCode {
+  STARTER
+  GROWTH
+  PROFESSIONAL
+}
+
+enum SubscriptionStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  CANCELED
+}
+
+enum FinancialTransactionKind {
+  SAAS_SUBSCRIPTION
+  STORE_SALE
+  MARKETPLACE_DEAL
+  REFUND
+  CHARGEBACK
+  ADJUSTMENT
+  PAYOUT
+}
+
+enum FinancialTransactionStatus {
+  PENDING
+  AVAILABLE
+  HELD
+  SETTLED
+  REVERSED
+  FAILED
+}
+
+enum LedgerAccount {
+  PLATFORM
+  TENANT
+  BROKER
+  CARRIER
+  PROCESSOR
+  TAX_PAYABLE
+  CUSTOMER
+}
+
+enum LedgerEntryType {
+  SAAS_REVENUE
+  STORE_COMMISSION
+  MARKETPLACE_COMMISSION
+  TENANT_PROCEEDS
+  BROKER_MARGIN
+  CARRIER_PROCEEDS
+  PROCESSOR_FEE
+  TAX
+  REFUND
+  CHARGEBACK
+  ADJUSTMENT
+  PAYOUT
+  PAYOUT_REVERSAL
+}
+
+enum LedgerDirection {
+  DEBIT
+  CREDIT
+}
+
 model Tenant {
-  id               String           @id @default(cuid())
-  name             String
-  slug             String           @unique
-  primaryDomain    String?          @db.VarChar(255)
-  subdomain        String?          @db.VarChar(255)
-  isActive         Boolean          @default(true)
-  isMaster         Boolean          @default(false)
-  subscriptionPlan String           @default("free")
-  brandingJson     Json?
-  email            String?
-  createdAt        DateTime         @default(now())
-  updatedAt        DateTime         @updatedAt
-  products         Product[]
-  categories       Category[]
-  quotes           Quote[]
-  loads            Load[]
-  orders           Order[]
-  tags             Tag[]
-  carrierProfiles  CarrierProfile[]
-  users            User[]
+  id                    String                 @id @default(cuid())
+  name                  String
+  slug                  String                 @unique
+  primaryDomain         String?                @db.VarChar(255)
+  subdomain             String?                @unique @db.VarChar(63)
+  isActive              Boolean                @default(true)
+  isMaster              Boolean                @default(false)
+  subscriptionPlan      String                 @default("free")
+  brandingJson          Json?
+  email                 String?
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+  products              Product[]
+  categories            Category[]
+  quotes                Quote[]
+  loads                 Load[]
+  orders                Order[]
+  tags                  Tag[]
+  carrierProfiles       CarrierProfile[]
+  users                 User[]
+  commissionPolicy      CommissionPolicy?
+  subscription          Subscription?
+  financialTransactions FinancialTransaction[]
+  ledgerEntries         LedgerEntry[]
+  mediaAssets           MediaAsset[]
+  themeActivation       TenantThemeActivation? @relation("ActiveTenantTheme")
+  uploadedThemes        StoreTheme[]           @relation("ThemeUploaderTenant")
+  reviews               Review[]
+  disputes              Dispute[]
+  connectionEvents      ConnectionEvent[]
+  simulationConfig      SimulationConfig?
+  simulationEvents      SimulationEvent[]
+  aiConfig              AiTenantConfig?
+  aiUsage               AiUsageEvent[]
+  cryptoSettings        CryptoPaymentSettings?
+  cryptoInvoices        CryptoInvoice[]
+  aiAgents              AiAgentDefinition[]
+  aiRecommendations     AiRecommendation[]
+  approvalRequests      ApprovalRequest[]
+  platformEvents        PlatformEvent[]
+  workflows             WorkflowDefinition[]
+  workflowRuns          WorkflowRun[]
+  backgroundJobs        BackgroundJob[]
+  notifications         Notification[]
+  toteAssets            ToteAsset[]
+  toteRentals           ToteRental[]
+  inventoryLocations    InventoryLocation[]
+  inventoryStocks       InventoryStock[]
+  inventoryMovements    InventoryMovement[]
+  digitalPasses         DigitalPass[]
+  metricSnapshots       MetricSnapshot[]
+  productBadges         ProductBadge[]
+  shippingConfigs       TenantShippingConfig[]
+  shippingQuotes        ShippingQuote[]
+  securityBlocks        SecurityBlock[]
+  rentalBookings        RentalBooking[]
+}
+
+enum StoreThemeStatus {
+  DRAFT
+  PENDING_REVIEW
+  APPROVED
+  DISABLED
+  DEPRECATED
+}
+
+enum MediaStorageProvider {
+  LOCAL
+  HTTP
+  VERCEL_BLOB
+  CLOUDINARY
+  S3
+  SUPABASE
+}
+
+enum ReviewTargetType {
+  USER
+  TENANT
+  STORE
+  PRODUCT
+}
+
+enum ReviewTransactionType {
+  STORE_ORDER
+  MARKETPLACE_LOAD
+}
+
+enum ReviewModerationStatus {
+  PUBLISHED
+  HIDDEN
+  LOCKED
+  REMOVED
+}
+
+enum DisputeStatus {
+  OPEN
+  UNDER_REVIEW
+  RESOLVED
+  REJECTED
+  CLOSED
+}
+
+model StoreTheme {
+  id                   String                  @id @default(cuid())
+  key                  String                  @unique
+  name                 String
+  description          String?
+  version              String                  @default("1.0.0")
+  compatibilityVersion String                  @default("1")
+  status               StoreThemeStatus        @default(DRAFT)
+  isBuiltIn            Boolean                 @default(false)
+  previewImageUrl      String?
+  manifestJson         Json
+  uploadedByTenantId   String?
+  uploadedByTenant     Tenant?                 @relation("ThemeUploaderTenant", fields: [uploadedByTenantId], references: [id], onDelete: SetNull)
+  activations          TenantThemeActivation[] @relation("SelectedStoreTheme")
+  previousActivations  TenantThemeActivation[] @relation("PreviousStoreTheme")
+  createdAt            DateTime                @default(now())
+  updatedAt            DateTime                @updatedAt
+
+  @@index([status, isBuiltIn])
+  @@index([uploadedByTenantId])
+}
+
+model TenantThemeActivation {
+  id              String      @id @default(cuid())
+  tenantId        String      @unique
+  tenant          Tenant      @relation("ActiveTenantTheme", fields: [tenantId], references: [id], onDelete: Cascade)
+  themeId         String
+  theme           StoreTheme  @relation("SelectedStoreTheme", fields: [themeId], references: [id], onDelete: Restrict)
+  previousThemeId String?
+  previousTheme   StoreTheme? @relation("PreviousStoreTheme", fields: [previousThemeId], references: [id], onDelete: SetNull)
+  settingsJson    Json
+  activatedAt     DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  @@index([themeId])
+  @@index([previousThemeId])
+}
+
+model MediaAsset {
+  id            String               @id @default(cuid())
+  tenantId      String
+  tenant        Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  provider      MediaStorageProvider
+  storageKey    String
+  url           String
+  originalName  String?
+  altText       String?
+  mimeType      String
+  sizeBytes     Int
+  width         Int?
+  height        Int?
+  checksum      String
+  status        String               @default("READY")
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+  productImages ProductImage[]
+
+  @@unique([provider, storageKey])
+  @@index([tenantId, createdAt])
 }
 
 model User {
-  id       String @id @default(cuid())
-  tenantId String
-  tenant   Tenant @relation(fields: [tenantId], references: [id])
+  id       String  @id @default(cuid())
+  tenantId String?
+  tenant   Tenant? @relation(fields: [tenantId], references: [id], onDelete: SetNull)
 
   fullName     String?
   email        String  @unique
-  passwordHash String
+  passwordHash String?
 
-  role     UserRole @default(TENANT_ADMIN)
-  isActive Boolean  @default(true)
+  role            UserRole  @default(MARKETPLACE_USER)
+  isActive        Boolean   @default(true)
+  emailVerifiedAt DateTime?
+  lastLoginAt     DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  authTokens               AuthToken[]
+  oauthAccounts            OAuthAccount[]
+  reviewsWritten           Review[]             @relation("ReviewAuthor")
+  reviewsReceived          Review[]             @relation("ReviewRecipient")
+  reviewVotes              ReviewHelpfulVote[]
+  reviewReports            ReviewReport[]
+  disputesOpened           Dispute[]            @relation("DisputeOpenedBy")
+  disputesAgainst          Dispute[]            @relation("DisputeAgainstUser")
+  connectionEvents         ConnectionEvent[]
+  marketplaceLoadsPosted   MarketplaceLoad[]    @relation("MarketplaceLoadPoster")
+  marketplaceLoadsBrokered MarketplaceLoad[]    @relation("MarketplaceLoadBroker")
+  marketplaceLoadsCarried  MarketplaceLoad[]    @relation("MarketplaceLoadCarrier")
+  marketplaceBids          MarketplaceBid[]
+  marketplaceMessages      MarketplaceMessage[]
+  aiRecommendations        AiRecommendation[]
+  approvalRequestsCreated  ApprovalRequest[]    @relation("ApprovalRequester")
+  approvalRequestsDecided  ApprovalRequest[]    @relation("ApprovalDecider")
+  notifications            Notification[]
+  passkeys                 PasskeyCredential[]
+  webauthnChallenges       WebAuthnChallenge[]
+  digitalPasses            DigitalPass[]
+  securityBlocksCreated    SecurityBlock[]      @relation("SecurityBlockCreator")
 
   @@index([tenantId])
   @@index([role])
 }
 
+enum AuthTokenType {
+  EMAIL_VERIFICATION
+  PASSWORD_RESET
+  REFRESH_TOKEN
+}
+
+model AuthToken {
+  id         String        @id @default(cuid())
+  userId     String
+  user       User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type       AuthTokenType
+  tokenHash  String        @unique
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime      @default(now())
+
+  @@index([userId])
+  @@index([type])
+  @@index([expiresAt])
+}
+
+model OAuthAccount {
+  id                String   @id @default(cuid())
+  userId            String
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider          String
+  providerAccountId String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
 model Category {
-  id          String    @id @default(cuid())
-  tenantId    String
-  tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  name        String
-  slug        String
-  description String?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  products    Product[]
+  id           String         @id @default(cuid())
+  tenantId     String
+  tenant       Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name         String
+  slug         String
+  description  String?
+  imageUrl     String?
+  icon         String?
+  displayOrder Int            @default(0)
+  isEnabled    Boolean        @default(true)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  products     Product[]
+  badges       ProductBadge[]
 
   @@unique([tenantId, slug])
   @@index([tenantId])
 }
 
 model Product {
-  id              String         @id @default(cuid())
-  tenantId        String
-  tenant          Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  categoryId      String?
-  category        Category?      @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  name            String
-  slug            String
-  description     String?
-  longDescription String?
-  seoTitle        String?
-  metaDescription String?
-  canonicalUrl    String?
-  priceCents      Int
-  sku             String?
-  stock           Int            @default(0)
-  weightKg        Decimal        @db.Decimal(10, 2)
-  isActive        Boolean        @default(true)
-  isFurniture     Boolean        @default(false)
-  isMovingSupply  Boolean        @default(true)
-  stripePriceId   String?
-  metadataJson    Json?
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
-  orderItems      OrderItem[]
-  productTags     ProductTag[]
-  images          ProductImage[]
+  id                   String                   @id @default(cuid())
+  tenantId             String
+  tenant               Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  categoryId           String?
+  category             Category?                @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  name                 String
+  slug                 String
+  description          String?
+  longDescription      String?
+  seoTitle             String?
+  metaDescription      String?
+  canonicalUrl         String?
+  priceCents           Int
+  salePriceCents       Int?
+  currency             String                   @default("cad")
+  productType          ProductType              @default(PHYSICAL)
+  publicationStatus    ProductPublicationStatus @default(ACTIVE)
+  sku                  String?
+  stock                Int                      @default(0)
+  weightKg             Decimal                  @db.Decimal(10, 2)
+  isActive             Boolean                  @default(true)
+  isFurniture          Boolean                  @default(false)
+  isMovingSupply       Boolean                  @default(true)
+  stripePriceId        String?
+  metadataJson         Json?
+  weeklyRateCents      Int?
+  minimumRentalWeeks   Int?
+  minimumChargeCents   Int?
+  rentalInventoryUnits Int?
+  createdAt            DateTime                 @default(now())
+  updatedAt            DateTime                 @updatedAt
+  orderItems           OrderItem[]
+  productTags          ProductTag[]
+  images               ProductImage[]
+  inventoryStocks      InventoryStock[]
+  inventoryMoves       InventoryMovement[]
+  variants             ProductVariant[]
+  collections          ProductCollectionItem[]
+  badges               ProductBadge[]
+  rentalBookings       RentalBooking[]
 
   @@unique([tenantId, slug])
   @@index([tenantId])
   @@index([categoryId])
 }
 
-model ProductImage {
-  id        String   @id @default(cuid())
+model ProductBadge {
+  id               String    @id @default(cuid())
+  tenantId         String
+  tenant           Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  productId        String?
+  product          Product?  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  categoryId       String?
+  category         Category? @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  label            String
+  badgeType        String
+  percentage       Int?
+  startsAt         DateTime?
+  endsAt           DateTime?
+  enabled          Boolean   @default(true)
+  displayPriority  Int       @default(0)
+  tooltip          String?
+  eligibilityJson  Json?
+  isGlobalTemplate Boolean   @default(false)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([tenantId, enabled, displayPriority])
+  @@index([productId])
+  @@index([categoryId])
+}
+
+model RentalBooking {
+  id                   String   @id @default(cuid())
+  tenantId             String
+  tenant               Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  productId            String
+  product              Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
+  orderId              String?
+  customerEmail        String
+  moveDate             DateTime
+  deliveryDate         DateTime
+  pickupDate           DateTime
+  rentalWeeks          Int
+  packageQuantity      Int      @default(1)
+  reservedToteUnits    Int
+  weeklyRateCents      Int
+  minimumChargeCents   Int
+  totalCents           Int
+  deliveryAddressJson  Json
+  serviceArea          String?
+  status               String   @default("RESERVED")
+  contractSnapshotJson Json
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@index([tenantId, deliveryDate, pickupDate])
+  @@index([productId, status])
+  @@index([orderId])
+}
+
+enum ProductType {
+  PHYSICAL
+  RENTAL
+  SERVICE_ADD_ON
+  BUNDLE
+}
+
+enum ProductPublicationStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+model ProductVariant {
+  id             String   @id @default(cuid())
+  productId      String
+  product        Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  name           String
+  sku            String?
+  priceCents     Int
+  salePriceCents Int?
+  stock          Int      @default(0)
+  optionsJson    Json?
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([productId, sku])
+  @@index([productId, isActive])
+}
+
+model ProductCollection {
+  id          String                  @id @default(cuid())
+  tenantId    String
+  name        String
+  slug        String
+  description String?
+  isActive    Boolean                 @default(true)
+  createdAt   DateTime                @default(now())
+  updatedAt   DateTime                @updatedAt
+  products    ProductCollectionItem[]
+
+  @@unique([tenantId, slug])
+  @@index([tenantId, isActive])
+}
+
+model ProductCollectionItem {
+  id           String            @id @default(cuid())
+  collectionId String
+  collection   ProductCollection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  productId    String
+  product      Product           @relation(fields: [productId], references: [id], onDelete: Cascade)
+  position     Int               @default(0)
+
+  @@unique([collectionId, productId])
+  @@index([productId])
+}
+
+model StoreCart {
+  id         String          @id @default(cuid())
+  tenantId   String
+  userId     String?
+  sessionKey String?
+  currency   String          @default("cad")
+  expiresAt  DateTime?
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+  items      StoreCartItem[]
+
+  @@unique([tenantId, userId])
+  @@unique([tenantId, sessionKey])
+  @@index([expiresAt])
+}
+
+model StoreCartItem {
+  id        String    @id @default(cuid())
+  cartId    String
+  cart      StoreCart @relation(fields: [cartId], references: [id], onDelete: Cascade)
   productId String
-  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  variantId String?
+  quantity  Int
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@unique([cartId, productId, variantId])
+  @@index([productId])
+  @@index([variantId])
+}
+
+model ProductImage {
+  id        String      @id @default(cuid())
+  productId String
+  product   Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
   url       String
   altText   String?
-  position  Int      @default(0)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  position  Int         @default(0)
+  assetId   String?
+  asset     MediaAsset? @relation(fields: [assetId], references: [id], onDelete: SetNull)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
 
   @@index([productId])
   @@index([position])
+  @@index([assetId])
+}
+
+model Review {
+  id                  String                 @id @default(cuid())
+  tenantId            String?
+  tenant              Tenant?                @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  reviewerId          String
+  reviewer            User                   @relation("ReviewAuthor", fields: [reviewerId], references: [id], onDelete: Cascade)
+  revieweeUserId      String?
+  revieweeUser        User?                  @relation("ReviewRecipient", fields: [revieweeUserId], references: [id], onDelete: SetNull)
+  targetType          ReviewTargetType
+  targetId            String
+  transactionType     ReviewTransactionType
+  transactionId       String
+  rating              Int
+  title               String?
+  body                String
+  photoUrls           Json?
+  verifiedTransaction Boolean                @default(false)
+  moderationStatus    ReviewModerationStatus @default(PUBLISHED)
+  businessResponse    String?
+  responseAt          DateTime?
+  lockedAt            DateTime?
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
+  helpfulVotes        ReviewHelpfulVote[]
+  reports             ReviewReport[]
+
+  @@unique([reviewerId, transactionType, transactionId, targetType, targetId])
+  @@index([targetType, targetId, moderationStatus])
+  @@index([revieweeUserId, moderationStatus])
+  @@index([tenantId, moderationStatus])
+}
+
+model ReviewHelpfulVote {
+  id        String   @id @default(cuid())
+  reviewId  String
+  review    Review   @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([reviewId, userId])
+  @@index([userId])
+}
+
+model ReviewReport {
+  id         String   @id @default(cuid())
+  reviewId   String
+  review     Review   @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  reporterId String
+  reporter   User     @relation(fields: [reporterId], references: [id], onDelete: Cascade)
+  reason     String
+  status     String   @default("OPEN")
+  createdAt  DateTime @default(now())
+
+  @@unique([reviewId, reporterId])
+  @@index([status, createdAt])
+}
+
+model Dispute {
+  id              String                @id @default(cuid())
+  tenantId        String?
+  tenant          Tenant?               @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  openedByUserId  String
+  openedByUser    User                  @relation("DisputeOpenedBy", fields: [openedByUserId], references: [id], onDelete: Restrict)
+  againstUserId   String?
+  againstUser     User?                 @relation("DisputeAgainstUser", fields: [againstUserId], references: [id], onDelete: SetNull)
+  transactionType ReviewTransactionType
+  transactionId   String
+  reason          String
+  details         String
+  status          DisputeStatus         @default(OPEN)
+  resolution      String?
+  resolvedAt      DateTime?
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+
+  @@unique([openedByUserId, transactionType, transactionId])
+  @@index([tenantId, status])
+  @@index([status, createdAt])
 }
 
 model Tag {
@@ -251,61 +777,396 @@ model Load {
 }
 
 model Customer {
-id String @id @default(cuid())
-tenantId String
-name String?
-email String
-phone String?
-address Json?
-createdAt DateTime @default(now())
-updatedAt DateTime @updatedAt
+  id        String   @id @default(cuid())
+  tenantId  String
+  name      String?
+  email     String
+  phone     String?
+  address   Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-@@unique([tenantId, email], name: "tenantId_email")
-@@index([tenantId])
+  @@unique([tenantId, email], name: "tenantId_email")
+  @@index([tenantId])
 }
 
 model TenantLedger {
-id String @id @default(cuid())
-tenantId String
-orderId String @unique
-grossCents Int
-feeCents Int
-netCents Int
-status String @default("pending")
-createdAt DateTime @default(now())
-updatedAt DateTime @updatedAt
+  id         String   @id @default(cuid())
+  tenantId   String
+  orderId    String   @unique
+  grossCents Int
+  feeCents   Int
+  netCents   Int
+  status     String   @default("pending")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
-order Order @relation(fields: [orderId], references: [id])
+  order Order @relation(fields: [orderId], references: [id])
 
-@@index([tenantId])
-@@index([status])
+  @@index([tenantId])
+  @@index([status])
+}
+
+model CommissionPolicy {
+  id                         String   @id @default(cuid())
+  scopeKey                   String   @unique
+  tenantId                   String?  @unique
+  tenant                     Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  storeCommissionBps         Int      @default(800)
+  marketplaceCommissionBps   Int      @default(700)
+  minimumMarketplaceFeeCents Int      @default(0)
+  createdAt                  DateTime @default(now())
+  updatedAt                  DateTime @updatedAt
+}
+
+model Subscription {
+  id                     String               @id @default(cuid())
+  tenantId               String               @unique
+  tenant                 Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  planCode               SubscriptionPlanCode
+  status                 SubscriptionStatus   @default(TRIALING)
+  monthlyPriceCents      Int
+  currency               String               @default("cad")
+  providerCustomerId     String?
+  providerSubscriptionId String?              @unique
+  currentPeriodStart     DateTime?
+  currentPeriodEnd       DateTime?
+  cancelAtPeriodEnd      Boolean              @default(false)
+  createdAt              DateTime             @default(now())
+  updatedAt              DateTime             @updatedAt
+
+  @@index([status])
+  @@index([planCode])
+}
+
+model SubscriptionPlan {
+  id                  String               @id @default(cuid())
+  code                SubscriptionPlanCode @unique
+  name                String
+  monthlyPriceCents   Int
+  annualPriceCents    Int?
+  currency            String               @default("cad")
+  featuresJson        Json
+  entitlementsJson    Json?
+  displayOrder        Int                  @default(0)
+  effectiveAt         DateTime             @default(now())
+  grandfatherExisting Boolean              @default(true)
+  isActive            Boolean              @default(true)
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+}
+
+model FinancialTransaction {
+  id                      String                     @id @default(cuid())
+  idempotencyKey          String                     @unique
+  tenantId                String?
+  tenant                  Tenant?                    @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  kind                    FinancialTransactionKind
+  status                  FinancialTransactionStatus @default(PENDING)
+  referenceType           String
+  referenceId             String
+  currency                String                     @default("cad")
+  grossCents              Int
+  taxCents                Int                        @default(0)
+  discountCents           Int                        @default(0)
+  processorFeeCents       Int                        @default(0)
+  platformCommissionCents Int                        @default(0)
+  brokerMarginCents       Int                        @default(0)
+  tenantProceedsCents     Int                        @default(0)
+  providerProceedsCents   Int                        @default(0)
+  metadataJson            Json?
+  createdAt               DateTime                   @default(now())
+  availableAt             DateTime?
+  settledAt               DateTime?
+  reversedAt              DateTime?
+  ledgerEntries           LedgerEntry[]
+
+  @@index([tenantId, status])
+  @@index([kind, status])
+  @@index([referenceType, referenceId])
+  @@index([createdAt])
+}
+
+model LedgerEntry {
+  id             String               @id @default(cuid())
+  transactionId  String
+  transaction    FinancialTransaction @relation(fields: [transactionId], references: [id], onDelete: Restrict)
+  tenantId       String?
+  tenant         Tenant?              @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  account        LedgerAccount
+  entryType      LedgerEntryType
+  direction      LedgerDirection
+  amountCents    Int
+  currency       String               @default("cad")
+  idempotencyKey String               @unique
+  metadataJson   Json?
+  createdAt      DateTime             @default(now())
+
+  @@index([transactionId])
+  @@index([tenantId, account])
+  @@index([entryType, createdAt])
+}
+
+model AuditEvent {
+  id          String   @id @default(cuid())
+  actorUserId String
+  action      String
+  entityType  String
+  entityId    String
+  tenantId    String?
+  beforeJson  Json?
+  afterJson   Json?
+  reason      String?
+  createdAt   DateTime @default(now())
+
+  @@index([actorUserId, createdAt])
+  @@index([entityType, entityId])
+  @@index([tenantId, createdAt])
+}
+
+model FeatureFlag {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  description String?
+  enabled     Boolean  @default(false)
+  tenantIds   Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model SupportTicket {
+  id         String   @id @default(cuid())
+  tenantId   String?
+  userId     String?
+  subject    String
+  details    String
+  priority   String   @default("NORMAL")
+  status     String   @default("OPEN")
+  assignedTo String?
+  resolution String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([status, priority, createdAt])
+  @@index([tenantId, status])
+}
+
+model ConnectionEvent {
+  id                 String   @id @default(cuid())
+  userId             String
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenantId           String?
+  tenant             Tenant?  @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  sessionHash        String
+  ipHash             String
+  city               String?
+  region             String?
+  country            String?
+  latitude           Decimal? @db.Decimal(7, 2)
+  longitude          Decimal? @db.Decimal(8, 2)
+  source             String   @default("EDGE_HEADERS")
+  ipAddressEncrypted String?
+  deviceType         String?
+  operatingSystem    String?
+  browser            String?
+  sessionStatus      String   @default("ACTIVE")
+  successful         Boolean  @default(true)
+  riskLevel          String   @default("LOW")
+  lastSeenAt         DateTime @default(now())
+  createdAt          DateTime @default(now())
+
+  @@unique([userId, sessionHash])
+  @@index([lastSeenAt])
+  @@index([tenantId, lastSeenAt])
+  @@index([country, region, city])
+}
+
+model SecurityBlock {
+  id              String    @id @default(cuid())
+  tenantId        String?
+  tenant          Tenant?   @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  targetType      String
+  targetValueHash String
+  targetDisplay   String?
+  userId          String?
+  sessionHash     String?
+  reason          String
+  warningAccepted Boolean   @default(false)
+  expiresAt       DateTime?
+  active          Boolean   @default(true)
+  createdById     String
+  createdBy       User      @relation("SecurityBlockCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  createdAt       DateTime  @default(now())
+  revokedAt       DateTime?
+
+  @@index([targetType, targetValueHash, active])
+  @@index([userId, active])
+  @@index([expiresAt])
+}
+
+model TenantShippingConfig {
+  id                String   @id @default(cuid())
+  tenantId          String
+  tenant            Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  provider          String
+  enabled           Boolean  @default(false)
+  environment       String   @default("SANDBOX")
+  originPostalCode  String?
+  originCountry     String   @default("CA")
+  handlingFeeCents  Int      @default(0)
+  markupBasisPoints Int      @default(0)
+  flatRateCents     Int?
+  settingsJson      Json?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@unique([tenantId, provider])
+  @@index([tenantId, enabled])
+}
+
+model ShippingQuote {
+  id                   String   @id @default(cuid())
+  tenantId             String
+  tenant               Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  cacheKey             String
+  provider             String
+  serviceName          String
+  serviceCode          String
+  rateCents            Int
+  handlingFeeCents     Int      @default(0)
+  totalCents           Int
+  currency             String   @default("cad")
+  estimatedTransitDays Int?
+  expiresAt            DateTime
+  requestSnapshotJson  Json
+  responseSnapshotJson Json?
+  createdAt            DateTime @default(now())
+
+  @@index([tenantId, cacheKey, expiresAt])
+}
+
+enum SimulationIntensity {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+model SimulationConfig {
+  id            String              @id @default(cuid())
+  scopeKey      String              @unique
+  tenantId      String?             @unique
+  tenant        Tenant?             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  enabled       Boolean             @default(false)
+  intensity     SimulationIntensity @default(LOW)
+  region        String?
+  businessHours Json?
+  watermark     String              @default("DEMO DATA")
+  updatedAt     DateTime            @updatedAt
+  createdAt     DateTime            @default(now())
+}
+
+model SimulationEvent {
+  id          String   @id @default(cuid())
+  tenantId    String?
+  tenant      Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  runId       String
+  kind        String
+  payloadJson Json
+  isSimulated Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  @@index([tenantId, createdAt])
+  @@index([runId])
+  @@index([kind, createdAt])
+}
+
+model AiTenantConfig {
+  id                  String   @id @default(cuid())
+  tenantId            String   @unique
+  tenant              Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  enabled             Boolean  @default(false)
+  monthlyRequestLimit Int      @default(100)
+  allowedModules      Json
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+}
+
+model AiPromptTemplate {
+  id           String   @id @default(cuid())
+  key          String   @unique
+  module       String
+  systemPrompt String
+  version      Int      @default(1)
+  enabled      Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model AiUsageEvent {
+  id                  String   @id @default(cuid())
+  tenantId            String?
+  tenant              Tenant?  @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  userId              String
+  module              String
+  provider            String
+  model               String
+  inputTokens         Int      @default(0)
+  outputTokens        Int      @default(0)
+  estimatedCostMicros Int      @default(0)
+  status              String
+  errorCode           String?
+  requestHash         String
+  createdAt           DateTime @default(now())
+
+  @@index([tenantId, createdAt])
+  @@index([userId, createdAt])
+  @@index([module, createdAt])
 }
 
 model WithdrawalRequest {
-id String @id @default(cuid())
-tenantId String
-amountCents Int
-status String @default("pending")
-createdAt DateTime @default(now())
-updatedAt DateTime @updatedAt
+  id                String    @id @default(cuid())
+  idempotencyKey    String?   @unique
+  tenantId          String
+  requestedByUserId String?
+  amountCents       Int
+  currency          String    @default("cad")
+  payoutMethod      String?
+  destinationRef    String?
+  providerPayoutId  String?   @unique
+  status            String    @default("PENDING")
+  failureReason     String?
+  reviewedByUserId  String?
+  reviewedAt        DateTime?
+  completedAt       DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([tenantId, status, createdAt])
 }
 
 model Order {
-  id                      String      @id @default(cuid())
+  id                      String            @id @default(cuid())
   tenantId                String
-  tenant                  Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  stripeCheckoutSessionId String?     @unique
-stripePaymentIntentId String? 
+  tenant                  Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  stripeCheckoutSessionId String?           @unique
+  stripePaymentIntentId   String?
   customerEmail           String
   customerName            String?
-  status                  OrderStatus @default(PENDING)
-  paymentStatus PaymentStatus @default(PENDING)
-  adminNotes String? 
-  currency                String      @default("cad")
+  status                  OrderStatus       @default(PENDING)
+  paymentStatus           PaymentStatus     @default(PENDING)
+  fulfillmentStatus       FulfillmentStatus @default(UNCONFIRMED)
+  shippingCarrier         String?
+  trackingNumber          String?
+  confirmedAt             DateTime?
+  shippedAt               DateTime?
+  deliveredAt             DateTime?
+  refundedCents           Int               @default(0)
+  adminNotes              String?
+  currency                String            @default("cad")
   subtotalCents           Int
   shippingCents           Int
   totalCents              Int
-  shippingCountry         String      @default("CA")
+  shippingCountry         String            @default("CA")
   shippingProvince        String?
   shippingState           String?
   shippingAddressJson     Json?
@@ -318,15 +1179,438 @@ stripePaymentIntentId String?
   attributionUtmCampaign  String?
   attributionUtmTerm      String?
   attributionUtmContent   String?
-  createdAt               DateTime    @default(now())
-  updatedAt               DateTime    @updatedAt
+  createdAt               DateTime          @default(now())
+  updatedAt               DateTime          @updatedAt
   items                   OrderItem[]
-  ledger TenantLedger?
+  ledger                  TenantLedger?
+  cryptoInvoice           CryptoInvoice?
 
   @@index([tenantId])
   @@index([customerEmail])
   @@index([attributionUtmSource])
   @@index([attributionUtmCampaign])
+}
+
+enum CryptoInvoiceStatus {
+  CREATED
+  AWAITING_PAYMENT
+  DETECTED
+  CONFIRMING
+  PAID
+  UNDERPAID
+  OVERPAID
+  EXPIRED
+  FAILED
+  REFUND_PENDING
+  REFUNDED
+}
+
+model CryptoPaymentSettings {
+  id                    String   @id @default(cuid())
+  tenantId              String   @unique
+  tenant                Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  enabled               Boolean  @default(false)
+  provider              String   @default("MOCK")
+  acceptedAssets        Json
+  requiredConfirmations Int      @default(2)
+  invoiceExpiryMinutes  Int      @default(30)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+}
+
+model CryptoInvoice {
+  id                    String               @id @default(cuid())
+  tenantId              String
+  tenant                Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  orderId               String               @unique
+  order                 Order                @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  provider              String
+  providerInvoiceId     String               @unique
+  asset                 String
+  chain                 String
+  fiatCurrency          String
+  fiatAmountCents       Int
+  cryptoAmount          Decimal              @db.Decimal(30, 12)
+  amountReceived        Decimal              @default(0) @db.Decimal(30, 12)
+  exchangeRate          Decimal              @db.Decimal(30, 12)
+  paymentAddress        String
+  qrPayload             String
+  transactionHash       String?
+  confirmations         Int                  @default(0)
+  requiredConfirmations Int
+  status                CryptoInvoiceStatus  @default(CREATED)
+  expiresAt             DateTime
+  paidAt                DateTime?
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+  webhookEvents         CryptoWebhookEvent[]
+
+  @@index([tenantId, status])
+  @@index([expiresAt, status])
+}
+
+model CryptoWebhookEvent {
+  id              String        @id @default(cuid())
+  provider        String
+  providerEventId String
+  invoiceId       String
+  invoice         CryptoInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  payloadHash     String
+  processedAt     DateTime      @default(now())
+
+  @@unique([provider, providerEventId])
+  @@index([invoiceId])
+}
+
+enum MarketplaceLoadStatus {
+  DRAFT
+  POSTED
+  BIDDING
+  AWARDED
+  FUNDED
+  PICKED_UP
+  IN_TRANSIT
+  DELIVERED
+  COMPLETED
+  CANCELED
+  DISPUTED
+}
+
+enum MarketplaceBidStatus {
+  DRAFT
+  SUBMITTED
+  VIEWED
+  COUNTERED
+  WITHDRAWN
+  ACCEPTED
+  REJECTED
+  EXPIRED
+  SUPERSEDED
+  CANCELLED
+}
+
+model MarketplaceLoad {
+  id                 String                @id @default(cuid())
+  posterId           String
+  poster             User                  @relation("MarketplaceLoadPoster", fields: [posterId], references: [id], onDelete: Restrict)
+  brokerId           String?
+  broker             User?                 @relation("MarketplaceLoadBroker", fields: [brokerId], references: [id], onDelete: SetNull)
+  carrierId          String?
+  carrier            User?                 @relation("MarketplaceLoadCarrier", fields: [carrierId], references: [id], onDelete: SetNull)
+  postedForCustomer  Boolean               @default(false)
+  customerName       String?
+  customerEmail      String?
+  title              String
+  description        String
+  originCity         String
+  originRegion       String?
+  originCountry      String
+  destinationCity    String
+  destinationRegion  String?
+  destinationCountry String
+  pickupDate         DateTime
+  deliveryDate       DateTime?
+  equipmentType      String?
+  category           String?
+  volumeCubicM       Decimal?              @db.Decimal(12, 3)
+  dimensionsJson     Json?
+  specialHandling    String?
+  imageUrls          Json?
+  documentUrls       Json?
+  currency           String                @default("cad")
+  visibility         String                @default("PUBLIC")
+  expiresAt          DateTime?
+  weightKg           Decimal?              @db.Decimal(12, 2)
+  budgetCents        Int?
+  awardedAmountCents Int?
+  status             MarketplaceLoadStatus @default(DRAFT)
+  proofOfDeliveryUrl String?
+  deliveredAt        DateTime?
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
+  bids               MarketplaceBid[]
+  messages           MarketplaceMessage[]
+
+  @@index([status, pickupDate])
+  @@index([posterId, status])
+  @@index([brokerId, status])
+  @@index([carrierId, status])
+}
+
+model MarketplaceBid {
+  id                 String                    @id @default(cuid())
+  loadId             String
+  load               MarketplaceLoad           @relation(fields: [loadId], references: [id], onDelete: Cascade)
+  bidderId           String
+  bidder             User                      @relation(fields: [bidderId], references: [id], onDelete: Cascade)
+  amountCents        Int
+  currency           String                    @default("cad")
+  message            String?
+  transitDays        Int?
+  pickupAvailability DateTime?
+  estimatedDelivery  DateTime?
+  equipment          String?
+  conditions         String?
+  viewedAt           DateTime?
+  acceptedAt         DateTime?
+  expiresAt          DateTime?
+  version            Int                       @default(1)
+  status             MarketplaceBidStatus      @default(SUBMITTED)
+  createdAt          DateTime                  @default(now())
+  updatedAt          DateTime                  @updatedAt
+  history            MarketplaceOfferHistory[]
+
+  @@unique([loadId, bidderId])
+  @@index([bidderId, status])
+}
+
+enum MarketplaceOfferAction {
+  CREATED
+  SUBMITTED
+  VIEWED
+  UPDATED
+  COUNTERED
+  ACCEPTED
+  REJECTED
+  WITHDRAWN
+  EXPIRED
+  SUPERSEDED
+  CANCELLED
+}
+
+model MarketplaceOfferHistory {
+  id            String                 @id @default(cuid())
+  offerId       String
+  offer         MarketplaceBid         @relation(fields: [offerId], references: [id], onDelete: Cascade)
+  actorUserId   String
+  action        MarketplaceOfferAction
+  amountCents   Int
+  currency      String                 @default("cad")
+  message       String?
+  conditions    String?
+  snapshotJson  Json
+  parentEventId String?
+  createdAt     DateTime               @default(now())
+
+  @@index([offerId, createdAt])
+  @@index([actorUserId, createdAt])
+}
+
+enum MarketplaceTransactionStatus {
+  DRAFT
+  OFFER_ACCEPTED
+  PAYMENT_PENDING
+  PAYMENT_PROCESSING
+  FUNDED
+  PAYMENT_FAILED
+  IN_PROGRESS
+  DELIVERY_REPORTED
+  DELIVERY_CONFIRMATION_PENDING
+  DELIVERED
+  DISPUTED
+  PAYOUT_PENDING
+  PAYOUT_PROCESSING
+  PAID_OUT
+  PAYOUT_FAILED
+  CANCELLED
+  REFUND_PENDING
+  PARTIALLY_REFUNDED
+  REFUNDED
+  CHARGEBACK
+}
+
+model MarketplaceTransaction {
+  id                    String                       @id @default(cuid())
+  idempotencyKey        String                       @unique
+  loadId                String                       @unique
+  offerId               String                       @unique
+  posterId              String
+  providerId            String
+  providerType          String
+  status                MarketplaceTransactionStatus @default(OFFER_ACCEPTED)
+  provider              String                       @default("STRIPE")
+  providerPaymentId     String?                      @unique
+  currency              String                       @default("cad")
+  grossCents            Int
+  taxCents              Int                          @default(0)
+  processorFeeCents     Int                          @default(0)
+  platformFeeCents      Int
+  providerNetCents      Int
+  feeRuleSnapshotJson   Json
+  agreementSnapshotJson Json
+  riskHold              Boolean                      @default(false)
+  riskHoldReason        String?
+  fundedAt              DateTime?
+  deliveryReportedAt    DateTime?
+  deliveryConfirmedAt   DateTime?
+  deliveryConfirmedById String?
+  settlementAvailableAt DateTime?
+  createdAt             DateTime                     @default(now())
+  updatedAt             DateTime                     @updatedAt
+  payout                MarketplacePayout?
+
+  @@index([posterId, status])
+  @@index([providerId, status])
+  @@index([status, settlementAvailableAt])
+}
+
+model MarketplacePayout {
+  id               String                 @id @default(cuid())
+  transactionId    String                 @unique
+  transaction      MarketplaceTransaction @relation(fields: [transactionId], references: [id], onDelete: Restrict)
+  idempotencyKey   String                 @unique
+  provider         String
+  providerPayoutId String?                @unique
+  amountCents      Int
+  currency         String                 @default("cad")
+  status           String                 @default("PENDING")
+  failureCode      String?
+  failureMessage   String?
+  availableAt      DateTime
+  initiatedAt      DateTime?
+  completedAt      DateTime?
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+
+  @@index([status, availableAt])
+}
+
+model MarketplaceFeeRule {
+  id              String    @id @default(cuid())
+  scopeKey        String
+  accountType     String
+  percentageBps   Int
+  fixedFeeCents   Int       @default(0)
+  minimumFeeCents Int       @default(0)
+  maximumFeeCents Int?
+  currency        String    @default("cad")
+  version         Int
+  taxTreatment    String    @default("EXCLUSIVE")
+  refundTreatment String    @default("PRO_RATA")
+  effectiveAt     DateTime
+  expiresAt       DateTime?
+  isActive        Boolean   @default(true)
+  createdById     String
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@unique([scopeKey, version])
+  @@index([accountType, isActive, effectiveAt])
+}
+
+enum PayoutEligibilityStatus {
+  NOT_STARTED
+  INFORMATION_REQUIRED
+  UNDER_REVIEW
+  VERIFIED
+  RESTRICTED
+  SUSPENDED
+  PAYOUTS_ENABLED
+  PAYOUTS_DISABLED
+}
+
+model ProviderPayoutProfile {
+  id                    String                  @id @default(cuid())
+  userId                String                  @unique
+  providerType          String
+  legalName             String?
+  businessName          String?
+  country               String?
+  contactJson           Json?
+  taxInformationStatus  String?
+  identityVerified      Boolean                 @default(false)
+  businessVerified      Boolean                 @default(false)
+  insuranceVerified     Boolean                 @default(false)
+  complianceStatus      String                  @default("PENDING")
+  connectedAccountId    String?
+  payoutMethod          String?
+  status                PayoutEligibilityStatus @default(NOT_STARTED)
+  missingRequirements   Json?
+  termsAcceptedAt       DateTime?
+  marketplaceAcceptedAt DateTime?
+  createdAt             DateTime                @default(now())
+  updatedAt             DateTime                @updatedAt
+
+  @@index([status])
+}
+
+enum TrustRiskBand {
+  LOW_RISK
+  MODERATE_RISK
+  ELEVATED_RISK
+  HIGH_RISK
+  REVIEW_REQUIRED
+}
+
+model MarketplaceTrustScore {
+  id                  String        @id @default(cuid())
+  userId              String
+  score               Int
+  riskBand            TrustRiskBand
+  version             Int
+  publicFactorsJson   Json
+  privateFactorsJson  Json
+  triggeredRulesJson  Json?
+  payoutHold          Boolean       @default(false)
+  investigationStatus String?
+  overriddenById      String?
+  overrideReason      String?
+  calculatedAt        DateTime      @default(now())
+  createdAt           DateTime      @default(now())
+
+  @@unique([userId, version])
+  @@index([riskBand, payoutHold])
+}
+
+enum WebsiteContentStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+model WebsiteContentVersion {
+  id          String               @id @default(cuid())
+  contentKey  String
+  version     Int
+  status      WebsiteContentStatus @default(DRAFT)
+  contentJson Json
+  updatedById String
+  publishedAt DateTime?
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+
+  @@unique([contentKey, version])
+  @@index([contentKey, status, version])
+}
+
+model WebsiteSocialLink {
+  id           String   @id @default(cuid())
+  platform     String
+  displayLabel String
+  url          String
+  enabled      Boolean  @default(true)
+  displayOrder Int      @default(0)
+  icon         String?
+  openNewTab   Boolean  @default(true)
+  updatedById  String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([platform, displayLabel])
+  @@index([enabled, displayOrder])
+}
+
+model MarketplaceMessage {
+  id        String          @id @default(cuid())
+  loadId    String
+  load      MarketplaceLoad @relation(fields: [loadId], references: [id], onDelete: Cascade)
+  senderId  String
+  sender    User            @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  body      String
+  createdAt DateTime        @default(now())
+
+  @@index([loadId, createdAt])
+  @@index([senderId])
 }
 
 model OrderItem {
@@ -364,4 +1648,473 @@ model CarrierProfile {
   @@index([tenantId])
   @@index([status])
   @@index([email])
+}
+
+enum AiRiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum RecommendationStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+  APPLIED
+  EXPIRED
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELED
+  EXPIRED
+}
+
+enum WorkflowRunStatus {
+  PENDING
+  WAITING_APPROVAL
+  RUNNING
+  SUCCEEDED
+  FAILED
+  DEAD_LETTERED
+  CANCELED
+}
+
+enum BackgroundJobStatus {
+  QUEUED
+  RUNNING
+  RETRY_SCHEDULED
+  SUCCEEDED
+  FAILED
+  DEAD_LETTERED
+  CANCELED
+}
+
+enum NotificationChannel {
+  IN_APP
+  EMAIL
+  SMS
+  PUSH
+}
+
+enum NotificationStatus {
+  QUEUED
+  SENT
+  DELIVERED
+  FAILED
+  CANCELED
+}
+
+enum ToteState {
+  AVAILABLE
+  RESERVED
+  OUT_FOR_DELIVERY
+  RENTED
+  OVERDUE
+  RETURNED
+  CLEANING
+  DAMAGED
+  LOST
+  RETIRED
+}
+
+enum InventoryMovementType {
+  RECEIPT
+  RESERVATION
+  RELEASE
+  SALE
+  RETURN
+  TRANSFER_IN
+  TRANSFER_OUT
+  ADJUSTMENT
+  DAMAGE
+}
+
+model AiAgentDefinition {
+  id                  String   @id @default(cuid())
+  scopeKey            String   @default("GLOBAL")
+  tenantId            String?
+  tenant              Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  key                 String
+  name                String
+  version             Int      @default(1)
+  module              String
+  outputSchemaVersion String   @default("1")
+  instructions        String
+  enabled             Boolean  @default(false)
+  minConfidence       Decimal  @default(0.8) @db.Decimal(4, 3)
+  allowedRoles        Json
+  policyJson          Json?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@unique([scopeKey, key, version])
+  @@index([key, enabled])
+}
+
+model AiRecommendation {
+  id                    String               @id @default(cuid())
+  tenantId              String?
+  tenant                Tenant?              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  userId                String
+  user                  User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  agentKey              String
+  agentVersion          Int
+  recommendationVersion String
+  outputSchemaVersion   String
+  confidenceScore       Decimal              @db.Decimal(4, 3)
+  riskLevel             AiRiskLevel
+  manualReviewRequired  Boolean
+  manualReviewReasons   Json
+  inputReferences       Json
+  inputHash             String
+  outputJson            Json
+  status                RecommendationStatus @default(DRAFT)
+  provider              String
+  model                 String
+  promptTemplateKey     String?
+  expiresAt             DateTime?
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+  approvals             ApprovalRequest[]
+
+  @@index([tenantId, status, createdAt])
+  @@index([userId, createdAt])
+  @@index([agentKey, createdAt])
+}
+
+model ApprovalRequest {
+  id               String            @id @default(cuid())
+  tenantId         String?
+  tenant           Tenant?           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  recommendationId String?
+  recommendation   AiRecommendation? @relation(fields: [recommendationId], references: [id], onDelete: Cascade)
+  requestedById    String
+  requestedBy      User              @relation("ApprovalRequester", fields: [requestedById], references: [id], onDelete: Cascade)
+  decidedById      String?
+  decidedBy        User?             @relation("ApprovalDecider", fields: [decidedById], references: [id], onDelete: SetNull)
+  actionType       String
+  targetType       String
+  targetId         String?
+  riskLevel        AiRiskLevel
+  status           ApprovalStatus    @default(PENDING)
+  reason           String?
+  requestedJson    Json
+  decidedJson      Json?
+  decidedAt        DateTime?
+  expiresAt        DateTime?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  @@index([tenantId, status, createdAt])
+  @@index([requestedById, status])
+}
+
+model PlatformEvent {
+  id             String        @id @default(cuid())
+  tenantId       String?
+  tenant         Tenant?       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  eventType      String
+  aggregateType  String
+  aggregateId    String
+  payloadJson    Json
+  metadataJson   Json?
+  idempotencyKey String        @unique
+  correlationId  String?
+  causationId    String?
+  occurredAt     DateTime      @default(now())
+  createdAt      DateTime      @default(now())
+  workflowRuns   WorkflowRun[]
+
+  @@index([tenantId, eventType, occurredAt])
+  @@index([aggregateType, aggregateId])
+}
+
+model WorkflowDefinition {
+  id          String        @id @default(cuid())
+  scopeKey    String        @default("GLOBAL")
+  tenantId    String?
+  tenant      Tenant?       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  key         String
+  name        String
+  version     Int           @default(1)
+  triggerType String
+  definition  Json
+  enabled     Boolean       @default(false)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  runs        WorkflowRun[]
+
+  @@unique([scopeKey, key, version])
+  @@index([triggerType, enabled])
+}
+
+model WorkflowRun {
+  id           String             @id @default(cuid())
+  tenantId     String?
+  tenant       Tenant?            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  workflowId   String
+  workflow     WorkflowDefinition @relation(fields: [workflowId], references: [id], onDelete: Restrict)
+  eventId      String
+  event        PlatformEvent      @relation(fields: [eventId], references: [id], onDelete: Restrict)
+  status       WorkflowRunStatus  @default(PENDING)
+  currentStep  Int                @default(0)
+  contextJson  Json
+  resultJson   Json?
+  errorCode    String?
+  errorMessage String?
+  startedAt    DateTime?
+  completedAt  DateTime?
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+  jobs         BackgroundJob[]
+
+  @@unique([workflowId, eventId])
+  @@index([tenantId, status, createdAt])
+}
+
+model BackgroundJob {
+  id             String              @id @default(cuid())
+  tenantId       String?
+  tenant         Tenant?             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  workflowRunId  String?
+  workflowRun    WorkflowRun?        @relation(fields: [workflowRunId], references: [id], onDelete: SetNull)
+  jobType        String
+  queueName      String              @default("default")
+  status         BackgroundJobStatus @default(QUEUED)
+  payloadJson    Json
+  resultJson     Json?
+  idempotencyKey String              @unique
+  attempts       Int                 @default(0)
+  maxAttempts    Int                 @default(5)
+  availableAt    DateTime            @default(now())
+  lockedAt       DateTime?
+  lockedBy       String?
+  lastError      String?
+  completedAt    DateTime?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  @@index([queueName, status, availableAt])
+  @@index([tenantId, status])
+}
+
+model Notification {
+  id             String              @id @default(cuid())
+  tenantId       String?
+  tenant         Tenant?             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  userId         String?
+  user           User?               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  channel        NotificationChannel
+  templateKey    String
+  recipient      String
+  subject        String?
+  payloadJson    Json
+  status         NotificationStatus  @default(QUEUED)
+  idempotencyKey String              @unique
+  providerId     String?
+  failureCode    String?
+  sentAt         DateTime?
+  readAt         DateTime?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  @@index([tenantId, status, createdAt])
+  @@index([userId, readAt])
+}
+
+model PasskeyCredential {
+  id           String    @id @default(cuid())
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  credentialId String    @unique
+  publicKey    Bytes
+  counter      BigInt    @default(0)
+  transports   Json?
+  name         String
+  backedUp     Boolean   @default(false)
+  lastUsedAt   DateTime?
+  createdAt    DateTime  @default(now())
+
+  @@index([userId])
+}
+
+model WebAuthnChallenge {
+  id         String    @id @default(cuid())
+  userId     String?
+  user       User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  challenge  String    @unique
+  purpose    String
+  email      String?
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId, purpose, expiresAt])
+  @@index([email, purpose, expiresAt])
+}
+
+model DigitalPass {
+  id             String    @id @default(cuid())
+  tenantId       String
+  tenant         Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  userId         String?
+  user           User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  provider       String
+  passType       String
+  referenceType  String
+  referenceId    String
+  serialNumber   String    @unique
+  status         String    @default("ACTIVE")
+  payloadJson    Json
+  providerPassId String?
+  expiresAt      DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@unique([provider, referenceType, referenceId])
+  @@index([tenantId, status])
+}
+
+model ToteAsset {
+  id                String               @id @default(cuid())
+  tenantId          String
+  tenant            Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  identifier        String
+  qrTokenHash       String               @unique
+  state             ToteState            @default(AVAILABLE)
+  inventoryLocation String?
+  damageNotes       String?
+  reuseCount        Int                  @default(0)
+  acquiredAt        DateTime             @default(now())
+  retiredAt         DateTime?
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+  rentalItems       ToteRentalItem[]
+  events            ToteLifecycleEvent[]
+
+  @@unique([tenantId, identifier])
+  @@index([tenantId, state])
+}
+
+model ToteRental {
+  id               String           @id @default(cuid())
+  tenantId         String
+  tenant           Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customerUserId   String?
+  customerEmail    String
+  orderId          String?
+  status           String           @default("RESERVED")
+  deliveryDate     DateTime?
+  dueDate          DateTime
+  returnDate       DateTime?
+  depositCents     Int              @default(0)
+  replacementCents Int              @default(0)
+  currency         String           @default("cad")
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  items            ToteRentalItem[]
+
+  @@index([tenantId, status, dueDate])
+  @@index([customerEmail])
+}
+
+model ToteRentalItem {
+  id        String     @id @default(cuid())
+  rentalId  String
+  rental    ToteRental @relation(fields: [rentalId], references: [id], onDelete: Cascade)
+  toteId    String
+  tote      ToteAsset  @relation(fields: [toteId], references: [id], onDelete: Restrict)
+  createdAt DateTime   @default(now())
+
+  @@unique([rentalId, toteId])
+  @@index([toteId])
+}
+
+model ToteLifecycleEvent {
+  id           String     @id @default(cuid())
+  toteId       String
+  tote         ToteAsset  @relation(fields: [toteId], references: [id], onDelete: Cascade)
+  actorUserId  String?
+  eventType    String
+  fromState    ToteState?
+  toState      ToteState
+  metadataJson Json?
+  createdAt    DateTime   @default(now())
+
+  @@index([toteId, createdAt])
+}
+
+model InventoryLocation {
+  id              String           @id @default(cuid())
+  tenantId        String
+  tenant          Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name            String
+  code            String
+  addressJson     Json?
+  pickupEnabled   Boolean          @default(false)
+  deliveryEnabled Boolean          @default(false)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  stocks          InventoryStock[]
+
+  @@unique([tenantId, code])
+}
+
+model InventoryStock {
+  id               String            @id @default(cuid())
+  tenantId         String
+  tenant           Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  productId        String
+  product          Product           @relation(fields: [productId], references: [id], onDelete: Cascade)
+  locationId       String
+  location         InventoryLocation @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  onHand           Int               @default(0)
+  reserved         Int               @default(0)
+  reorderThreshold Int               @default(0)
+  supplierJson     Json?
+  updatedAt        DateTime          @updatedAt
+
+  @@unique([productId, locationId])
+  @@index([tenantId, onHand])
+}
+
+model InventoryMovement {
+  id             String                @id @default(cuid())
+  tenantId       String
+  tenant         Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  productId      String
+  product        Product               @relation(fields: [productId], references: [id], onDelete: Restrict)
+  locationId     String
+  movementType   InventoryMovementType
+  quantity       Int
+  referenceType  String?
+  referenceId    String?
+  reason         String?
+  actorUserId    String?
+  idempotencyKey String                @unique
+  createdAt      DateTime              @default(now())
+
+  @@index([tenantId, productId, createdAt])
+  @@index([locationId, createdAt])
+}
+
+model MetricSnapshot {
+  id           String   @id @default(cuid())
+  tenantId     String?
+  tenant       Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  metricKey    String
+  periodStart  DateTime
+  periodEnd    DateTime
+  value        Decimal  @db.Decimal(18, 4)
+  unit         String
+  sourceJson   Json
+  calculatedAt DateTime @default(now())
+
+  @@unique([tenantId, metricKey, periodStart, periodEnd])
+  @@index([metricKey, periodEnd])
 }

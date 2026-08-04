@@ -6,8 +6,16 @@ import ThemeToggle from './ThemeToggle';
 
 const links = [
   { href: '/admin/dashboard', label: 'Dashboard' },
+  { href: '/admin/platform', label: 'Platform Ops' },
+  { href: '/admin/map', label: 'Operations Map' },
+  { href: '/admin/simulation', label: 'Demo Mode' },
+  { href: '/admin/ai', label: 'AI' },
+  { href: '/admin/crypto', label: 'Crypto' },
   { href: '/admin/manage', label: 'Manage' },
   { href: '/admin/tenant', label: 'Tenant Experience' },
+  { href: '/admin/themes', label: 'Store Themes' },
+  { href: '/admin/finance', label: 'Finance' },
+  { href: '/admin/reputation', label: 'Reviews & Disputes' },
   { href: '/admin/seo', label: 'SEO Tools' }
 ];
 

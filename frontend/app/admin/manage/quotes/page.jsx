@@ -1,39 +1,5 @@
 'use client';
-
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { apiFetch } from '../../../../lib/api';
-
-export default function QuotesPage() {
-  const [quotes, setQuotes] = useState([]);
-  const [error, setError] = useState('');
-
-  useEffect(() => {
-    apiFetch('/quotes').then(setQuotes).catch((err) => setError(err.message));
-  }, []);
-
-  return (
-    <main className="container grid" style={{ gap: 24 }}>
-      <section className="card">
-        <h1>Quotes</h1>
-        <p className="muted">Review moving requests, routes, and source attribution.</p>
-        {error ? <p className="error">{error}</p> : null}
-      </section>
-      <section className="card">
-        <table className="table">
-          <thead><tr><th>Name</th><th>Route</th><th>Status</th><th>Source</th><th>Comments</th></tr></thead>
-          <tbody>
-            {quotes.map((quote) => (
-              <tr key={quote.id}>
-                <td>{quote.fullName}</td>
-                <td>{quote.fromCity} → {quote.toCity}</td>
-                <td>{quote.status}</td>
-                <td>{quote.attributionUtmSource || 'direct/unknown'}</td>
-                <td>{quote.comments || '-'}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </section>
-    </main>
-  );
-}
+import { DataTable, ErrorState, FilterBar, LoadingState, PageHeader, StatusBadge } from '../../../../components/ui/LoadlyxUI';
+export default function QuotesPage(){const[quotes,setQuotes]=useState([]);const[error,setError]=useState('');const[loading,setLoading]=useState(true);const[query,setQuery]=useState('');useEffect(()=>{apiFetch('/quotes').then(setQuotes).catch(err=>setError(err.message)).finally(()=>setLoading(false))},[]);const visible=useMemo(()=>quotes.filter(row=>`${row.fullName} ${row.fromCity} ${row.toCity} ${row.status}`.toLowerCase().includes(query.toLowerCase())),[quotes,query]);const columns=[{key:'customer',label:'Customer',render:row=><strong>{row.fullName}</strong>},{key:'route',label:'Route',render:row=><span>{row.fromCity} → {row.toCity}</span>},{key:'status',label:'Status',render:row=><StatusBadge tone={row.status==='BOOKED'?'success':'warning'}>{row.status}</StatusBadge>},{key:'source',label:'Source',render:row=>row.attributionUtmSource||'Direct / unknown'},{key:'comments',label:'Move notes',render:row=><span className="muted">{row.comments||'No comments'}</span>}];return <main className="container"><PageHeader eyebrow="Revenue pipeline" title="Quotes" description="See moving requests, route demand, source attribution, and the work that needs follow-up." />{error?<ErrorState message={error}/>:loading?<LoadingState label="Loading quotes"/>:<><FilterBar resultLabel={`${visible.length} of ${quotes.length} quotes`}><input type="search" aria-label="Search quotes" placeholder="Search customer, city, or status" value={query} onChange={event=>setQuery(event.target.value)}/></FilterBar><DataTable columns={columns} rows={visible} emptyTitle="No matching quotes" emptyDescription="New quote requests will enter this revenue pipeline."/></>}</main>}

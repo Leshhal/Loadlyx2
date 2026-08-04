@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { adminFetch } from '../../../lib/adminFetch';
+import { EmptyState, PageHeader, StatCard, StatusBadge } from '../../../components/ui/LoadlyxUI';
 
 function money(cents = 0) {
 return new Intl.NumberFormat('en-CA', {
@@ -63,9 +64,6 @@ const run = async () => {
 const token = localStorage.getItem('token');
 const tenantSlug = localStorage.getItem('tenantSlug');
 
-console.log('DASHBOARD TOKEN:', token);
-console.log('DASHBOARD TENANT:', tenantSlug);
-
 if (!token) {
 router.replace('/login');
 return;
@@ -74,20 +72,15 @@ return;
 try {
 const res = await adminFetch('/admin/dashboard');
 
-console.log('ADMIN FETCH STATUS:', res.status);
-
 if (res.status === 401) {
-console.log('DASHBOARD 401');
 setError('Unauthorized');
 router.replace('/login');
 return;
 }
 
 const json = await res.json();
-console.log('DASHBOARD RESPONSE:', json);
 setData(json);
 } catch (err) {
-console.error('DASHBOARD ERROR:', err);
 setError('Something went wrong');
 } finally {
 setLoading(false);
@@ -101,27 +94,15 @@ const stats = data?.stats;
 
 return (
 <main className="container grid" style={{ gap: 24 }}>
-<section className="card admin-hero">
-<div>
-<span className="badge">Admin dashboard</span>
-<h1 className="page-title" style={{ fontSize: '2.6rem', marginTop: 10 }}>
-Tenant Operations Console
-</h1>
-<p className="lead">
-Track quotes, orders, loads, SEO coverage, and attribution data from a
-freight-style SaaS dashboard.
-</p>
-</div>
-
-<div className="hero-actions">
+<PageHeader eyebrow="Platform command" title="Operations at a glance" description="Start with what requires attention, then move through revenue, demand, and recent platform activity." actions={
+<>
 <Link className="btn" href="/admin/manage">
-Open Management Console
+Open management
 </Link>
 <Link className="btn secondary" href="/admin/seo">
 SEO Tools
 </Link>
-</div>
-</section>
+</>} />
 
 {error ? (
 <section className="card">
@@ -132,35 +113,16 @@ SEO Tools
 {stats ? (
 <>
 <section className="grid grid-4">
-<div className="card stat-card">
-<div className="muted">Quotes Today</div>
-<div className="stat-value">{stats.quotesToday}</div>
-<div className="small muted">New demand captured today</div>
-</div>
-
-<div className="card stat-card">
-<div className="muted">Orders Today</div>
-<div className="stat-value">{stats.ordersToday}</div>
-<div className="small muted">Checkout completions today</div>
-</div>
-
-<div className="card stat-card">
-<div className="muted">Revenue Today</div>
-<div className="stat-value">{money(stats.revenueTodayCents)}</div>
-<div className="small muted">Paid revenue attributed today</div>
-</div>
-
-<div className="card stat-card">
-<div className="muted">Pending Loads</div>
-<div className="stat-value">{stats.pendingLoads}</div>
-<div className="small muted">Ready for carrier matching</div>
-</div>
+<StatCard label="Quotes today" value={stats.quotesToday} detail="New demand captured" icon="users" />
+<StatCard label="Orders today" value={stats.ordersToday} detail="Checkout completions" icon="store" tone="green" />
+<StatCard label="Revenue today" value={money(stats.revenueTodayCents)} detail="Paid, attributed revenue" icon="chart" tone="gold" />
+<StatCard label="Pending loads" value={stats.pendingLoads} detail="Ready for carrier matching" icon="route" tone="red" />
 </section>
 
 <section className="card">
 <div className="panel-header">
 <div>
-<span className="badge badge-gold">Lifetime metrics</span>
+<StatusBadge tone="success">Lifetime metrics</StatusBadge>
 <h2 style={{ margin: '10px 0 0' }}>Totals across your tenant</h2>
 </div>
 </div>
@@ -228,6 +190,7 @@ Manage products
 ))}
 </tbody>
 </table>
+{!(data?.topProducts || []).length ? <EmptyState title="No product performance yet" description="Product sales will appear after paid store orders are recorded." actionHref="/admin/manage/products" actionLabel="Manage products" /> : null}
 </div>
 
 <div className="card">

@@ -1,50 +1,56 @@
-import dotenv from 'dotenv';
 import jwt from 'jsonwebtoken';
+import { env } from '../config/env.js';
+import { prisma } from '../db/prisma.js';
+import { hashConnectionValue } from '../services/locationPrivacy.js';
 
-dotenv.config();
-
-const JWT_SECRET = process.env.JWT_SECRET;
-
-if (!JWT_SECRET) {
-throw new Error('JWT_SECRET is missing from environment variables');
+if (!env.jwtSecret) {
+  throw new Error('JWT_SECRET is missing from environment variables');
 }
 
-// 🔐 Verify user is authenticated
-export function requireAuth(req, res, next) {
-try {
-const authHeader = req.headers.authorization;
+const ADMIN_ROLES = ['SUPER_ADMIN', 'PLATFORM_ADMIN', 'ADMIN', 'SUPPORT', 'TENANT_ADMIN'];
+const PLATFORM_ROLES = ['SUPER_ADMIN', 'PLATFORM_ADMIN', 'ADMIN', 'SUPPORT'];
 
-if (!authHeader || !authHeader.startsWith('Bearer ')) {
-return res.status(401).json({ error: 'Unauthorized' });
+export async function requireAuth(req, res, next) {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) return res.status(401).json({ error: 'Unauthorized' });
+    const token = authHeader.split(' ')[1];
+    const decoded = jwt.verify(token, env.jwtSecret);
+    if (decoded.tokenType && decoded.tokenType !== 'access') return res.status(401).json({ error: 'Invalid token type' });
+    const current = await prisma.user.findUnique({ where: { id: decoded.userId }, select: { id: true, email: true, role: true, tenantId: true, isActive: true, tenant: { select: { isActive: true } } } });
+    if (!current?.isActive || current.tenant?.isActive === false) return res.status(401).json({ error: 'Account or tenant is suspended' });
+    const ip = String(req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'unknown').split(',')[0].trim();
+    const sessionHash = hashConnectionValue(token);
+    const blocked = await prisma.securityBlock.findFirst({ where: { active: true, OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }], AND: [{ OR: [{ targetType: 'USER', userId: current.id }, { targetType: 'IP', targetValueHash: hashConnectionValue(ip) }, { targetType: 'SESSION', sessionHash }] }] } });
+    if (blocked && current.role !== 'SUPER_ADMIN') return res.status(403).json({ error: 'Access blocked by platform security policy' });
+    req.user = { ...decoded, userId: current.id, email: current.email, role: current.role, tenantId: current.tenantId || null };
+    next();
+  } catch (error) {
+    return res.status(401).json({ error: 'Invalid or expired token' });
+  }
 }
 
-const token = authHeader.split(' ')[1];
-
-console.log('TOKEN RECEIVED (VERIFY):', token);
-console.log('JWT_SECRET (VERIFY):', JWT_SECRET);
-
-const decoded = jwt.verify(token, JWT_SECRET);
-
-req.user = decoded;
-
-next();
-} catch (error) {
-console.error('Auth error:', error.message);
-return res.status(401).json({ error: 'Invalid or expired token' });
-}
+export async function optionalAuth(req, res, next) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith('Bearer ')) return next();
+  return requireAuth(req, res, next);
 }
 
-// 🔒 Verify user is admin
 export function requireAdmin(req, res, next) {
-if (!req.user) {
-return res.status(401).json({ error: 'Unauthorized' });
+  if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+  if (!ADMIN_ROLES.includes(req.user.role)) return res.status(403).json({ error: 'Forbidden' });
+  next();
 }
 
-const allowedRoles = ['PLATFORM_ADMIN', 'TENANT_ADMIN'];
-
-if (!allowedRoles.includes(req.user.role)) {
-return res.status(403).json({ error: 'Forbidden' });
+export function requirePlatformRole(req, res, next) {
+  if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+  if (!PLATFORM_ROLES.includes(req.user.role)) return res.status(403).json({ error: 'Forbidden' });
+  next();
 }
 
-next();
+export function requireTenantAccess(req, res, next) {
+  if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+  if (PLATFORM_ROLES.includes(req.user.role)) return next();
+  if (req.tenant?.id && req.user.tenantId === req.tenant.id) return next();
+  return res.status(403).json({ error: 'Forbidden' });
 }

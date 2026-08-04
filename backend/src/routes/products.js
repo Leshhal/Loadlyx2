@@ -5,10 +5,18 @@ import { prisma } from '../db/prisma.js';
 import { z } from 'zod';
 
 import { requireAuth } from '../middleware/requireauth.js';
+import { requireEntitlement } from '../middleware/requireEntitlement.js';
 
 
 
 const router = Router();
+const PLATFORM_ROLES = new Set(['SUPER_ADMIN', 'PLATFORM_ADMIN', 'ADMIN', 'SUPPORT']);
+
+function writableTenantId(req) {
+  if (req.user?.tenantId) return req.user.tenantId;
+  if (PLATFORM_ROLES.has(req.user?.role) && req.tenant?.id) return req.tenant.id;
+  return null;
+}
 
 
 
@@ -78,11 +86,17 @@ async function upsertProductTags(tx, tenantId, productId, tagNames = []) {
 
 
 
-async function replaceProductImages(tx, productId, images = []) {
+async function replaceProductImages(tx, tenantId, productId, images = []) {
 
   await tx.productImage.deleteMany({ where: { productId } });
 
   if (!images.length) return;
+
+  const assetIds = images.map((image) => image.assetId).filter(Boolean);
+  if (assetIds.length) {
+    const ownedAssets = await tx.mediaAsset.count({ where: { id: { in: assetIds }, tenantId, status: 'READY' } });
+    if (ownedAssets !== new Set(assetIds).size) throw new Error('One or more uploaded images do not belong to this tenant');
+  }
 
 
 
@@ -96,7 +110,9 @@ async function replaceProductImages(tx, productId, images = []) {
 
       altText: image.altText || null,
 
-      position: image.position ?? index
+      position: image.position ?? index,
+
+      assetId: image.assetId || null
 
     }))
 
@@ -112,9 +128,18 @@ const imageSchema = z.object({
 
   altText: z.string().optional().or(z.literal('')),
 
-  position: z.number().int().nonnegative().optional()
+  position: z.number().int().nonnegative().optional(),
+
+  assetId: z.string().optional()
 
 });
+
+const variantSchema = z.object({ name: z.string().min(1).max(160), sku: z.string().max(120).optional(), priceCents: z.number().int().nonnegative(), salePriceCents: z.number().int().nonnegative().optional().nullable(), stock: z.number().int().nonnegative().default(0), optionsJson: z.record(z.any()).optional(), isActive: z.boolean().default(true) });
+
+async function replaceProductVariants(tx, productId, variants = []) {
+  await tx.productVariant.deleteMany({ where: { productId } });
+  if (variants.length) await tx.productVariant.createMany({ data: variants.map((variant) => ({ ...variant, productId, sku: variant.sku || null, salePriceCents: variant.salePriceCents ?? null })) });
+}
 
 
 
@@ -135,6 +160,10 @@ const productCreateSchema = z.object({
   canonicalUrl: z.string().url().optional().or(z.literal('')),
 
   priceCents: z.number().int().nonnegative(),
+  salePriceCents: z.number().int().nonnegative().optional().nullable(),
+  currency: z.string().length(3).default('cad'),
+  productType: z.enum(['PHYSICAL','RENTAL','SERVICE_ADD_ON','BUNDLE']).default('PHYSICAL'),
+  publicationStatus: z.enum(['DRAFT','ACTIVE','ARCHIVED']).default('ACTIVE'),
 
   sku: z.string().optional(),
 
@@ -154,7 +183,8 @@ const productCreateSchema = z.object({
 
   altText: z.string().optional(),
 
-  tags: z.array(z.string()).optional().default([])
+  tags: z.array(z.string()).optional().default([]),
+  variants: z.array(variantSchema).max(100).optional().default([])
 
 });
 
@@ -177,6 +207,10 @@ const productUpdateSchema = z.object({
   canonicalUrl: z.string().url().nullable().optional().or(z.literal('')),
 
   priceCents: z.number().int().nonnegative().optional(),
+  salePriceCents: z.number().int().nonnegative().nullable().optional(),
+  currency: z.string().length(3).optional(),
+  productType: z.enum(['PHYSICAL','RENTAL','SERVICE_ADD_ON','BUNDLE']).optional(),
+  publicationStatus: z.enum(['DRAFT','ACTIVE','ARCHIVED']).optional(),
 
   sku: z.string().nullable().optional(),
 
@@ -198,7 +232,8 @@ const productUpdateSchema = z.object({
 
   altText: z.string().nullable().optional(),
 
-  tags: z.array(z.string()).optional()
+  tags: z.array(z.string()).optional(),
+  variants: z.array(variantSchema).max(100).optional()
 
 });
 
@@ -210,7 +245,10 @@ const includeProduct = {
 
   images: { orderBy: { position: 'asc' } },
 
+  variants: { orderBy: { createdAt: 'asc' } },
+
   productTags: { include: { tag: true } }
+  ,badges: { where: { enabled: true, OR: [{ startsAt: null }, { startsAt: { lte: new Date() } }], AND: [{ OR: [{ endsAt: null }, { endsAt: { gt: new Date() } }] }] }, orderBy: { displayPriority: 'asc' }, take: 3 }
 
 };
 
@@ -224,8 +262,15 @@ const { featured } = req.query;
 let where = {};
 
 if (tenantSlug) {
-const tenant = await prisma.tenant.findUnique({
-where: { slug: tenantSlug }
+const normalizedTenantSlug = String(tenantSlug).trim().toLowerCase();
+
+const tenant = await prisma.tenant.findFirst({
+where: {
+OR: [
+{ slug: normalizedTenantSlug },
+{ subdomain: normalizedTenantSlug }
+]
+}
 });
 
 if (!tenant) {
@@ -233,6 +278,8 @@ return res.status(404).json({ error: 'Tenant not found' });
 }
 
 where.tenantId = tenant.id;
+where.publicationStatus = 'ACTIVE';
+where.isActive = true;
 }
 
 if (featured === 'true') {
@@ -258,7 +305,7 @@ res.status(500).json({ error: 'Failed to fetch products' });
 
 router.get('/slug/:slug', async (req, res) => {
 try {
-const tenantId = req.user?.tenantId || req.tenant?.id;
+const tenantId = req.tenant?.id || req.user?.tenantId;
 
 if (!tenantId) {
 return res.status(401).json({ error: 'Unauthorized or tenant not found' });
@@ -286,9 +333,9 @@ res.status(500).json({ error: 'Failed to fetch product' });
 
 
 
-router.post('/', requireAuth , async (req, res) => {
-
-  if (!req.user?.tenantId) {
+router.post('/', requireAuth, requireEntitlement('products'), async (req, res) => {
+  const tenantId = writableTenantId(req);
+  if (!tenantId) {
 
     return res.status(401).json({ error: 'Unauthorized' });
 
@@ -327,6 +374,10 @@ router.post('/', requireAuth , async (req, res) => {
         canonicalUrl: data.canonicalUrl || null,
 
         priceCents: data.priceCents,
+        salePriceCents: data.salePriceCents ?? null,
+        currency: data.currency.toLowerCase(),
+        productType: data.productType,
+        publicationStatus: data.publicationStatus,
 
         sku: data.sku,
 
@@ -340,7 +391,7 @@ router.post('/', requireAuth , async (req, res) => {
 
         isMovingSupply: data.isMovingSupply,
 
-        tenantId: req.user.tenantId
+        tenantId
 
       }
 
@@ -348,9 +399,10 @@ router.post('/', requireAuth , async (req, res) => {
 
 
 
-    await replaceProductImages(tx, created.id, normalizedImages);
+    await replaceProductImages(tx, tenantId, created.id, normalizedImages);
 
-    await upsertProductTags(tx, req.tenant.id, created.id, data.tags);
+    await upsertProductTags(tx, tenantId, created.id, data.tags);
+    await replaceProductVariants(tx, created.id, data.variants);
 
 
 
@@ -372,9 +424,9 @@ router.post('/', requireAuth , async (req, res) => {
 
 
 
-router.put('/:id', requireAuth , async (req, res) => {
-
-  if (!req.user?.tenantId) {
+router.put('/:id', requireAuth, requireEntitlement('products'), async (req, res) => {
+  const tenantId = writableTenantId(req);
+  if (!tenantId) {
 
     return res.status(401).json({ error: 'Unauthorized' });
 
@@ -388,7 +440,7 @@ router.put('/:id', requireAuth , async (req, res) => {
 
   const existing = await prisma.product.findFirst({
 
-    where: { id: req.params.id, tenantId: req.user.tenantId },
+    where: { id: req.params.id, tenantId },
 
     include: includeProduct
 
@@ -435,6 +487,10 @@ router.put('/:id', requireAuth , async (req, res) => {
         ...(data.canonicalUrl !== undefined ? { canonicalUrl: data.canonicalUrl || null } : {}),
 
         ...(data.priceCents !== undefined ? { priceCents: data.priceCents } : {}),
+        ...(data.salePriceCents !== undefined ? { salePriceCents: data.salePriceCents } : {}),
+        ...(data.currency !== undefined ? { currency: data.currency.toLowerCase() } : {}),
+        ...(data.productType !== undefined ? { productType: data.productType } : {}),
+        ...(data.publicationStatus !== undefined ? { publicationStatus: data.publicationStatus } : {}),
 
         ...(data.sku !== undefined ? { sku: data.sku } : {}),
 
@@ -458,7 +514,7 @@ router.put('/:id', requireAuth , async (req, res) => {
 
     if (normalizedImages !== undefined) {
 
-      await replaceProductImages(tx, req.params.id, normalizedImages);
+      await replaceProductImages(tx, tenantId, req.params.id, normalizedImages);
 
     }
 
@@ -466,9 +522,11 @@ router.put('/:id', requireAuth , async (req, res) => {
 
     if (data.tags) {
 
-      await upsertProductTags(tx, req.tenant.id, req.params.id, data.tags);
+      await upsertProductTags(tx, tenantId, req.params.id, data.tags);
 
     }
+
+    if (data.variants) await replaceProductVariants(tx, req.params.id, data.variants);
 
 
 
@@ -486,6 +544,15 @@ router.put('/:id', requireAuth , async (req, res) => {
 
   res.json(serializeProduct(product));
 
+});
+
+router.delete('/:id', requireAuth, requireEntitlement('products'), async (req, res) => {
+  const tenantId = writableTenantId(req);
+  if (!tenantId) return res.status(401).json({ error: 'Select a tenant before managing products' });
+  const product = await prisma.product.findFirst({ where: { id: req.params.id, tenantId } });
+  if (!product) return res.status(404).json({ error: 'Product not found' });
+  await prisma.product.delete({ where: { id: product.id } });
+  return res.status(204).end();
 });
 
 

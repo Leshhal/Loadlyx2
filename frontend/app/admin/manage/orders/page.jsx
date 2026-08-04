@@ -1,47 +1,8 @@
 'use client';
-
-import { useEffect, useState } from 'react';
+import Link from 'next/link';
+import { useEffect, useMemo, useState } from 'react';
 import { apiFetch } from '@/lib/api';
-
-function money(cents = 0) {
-  return new Intl.NumberFormat('en-CA', { style: 'currency', currency: 'CAD' }).format((cents || 0) / 100);
-}
-
-export default function OrdersPage() {
-  const [orders, setOrders] = useState([]);
-  const [error, setError] = useState('');
-
-  useEffect(() => {
-    apiFetch('/orders').then(setOrders).catch((err) => setError(err.message));
-  }, []);
-
-  return (
-    <main className="container grid" style={{ gap: 24 }}>
-      <section className="card">
-        <h1>Orders</h1>
-        <p className="muted">Review store orders, totals, and attribution captured at checkout.</p>
-        {error ? <p className="error">{error}</p> : null}
-      </section>
-      <section className="card">
-        <table className="table">
-          <thead><tr><th>Customer</th><th>Status</th><th>Total</th><th>Source</th><th>Created</th></tr></thead>
-          <tbody>
-            {orders.map((order) => (
-              <tr
-key={order.id}
-onClick={() => window.location.href = `/admin/manage/orders/${order.id}`}
-style={{ cursor: 'pointer' }}
->
-                <td>{order.customerName || order.customerEmail}</td>
-                <td>{order.status}</td>
-                <td>{money(order.totalCents)}</td>
-                <td>{order.attributionUtmSource || 'direct/unknown'}</td>
-                <td>{new Date(order.createdAt).toLocaleDateString('en-CA')}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </section>
-    </main>
-  );
-}
+import { DataTable, ErrorState, FilterBar, LoadingState, PageHeader, StatusBadge } from '../../../../components/ui/LoadlyxUI';
+const money = (cents=0) => new Intl.NumberFormat('en-CA',{style:'currency',currency:'CAD'}).format(cents/100);
+const tone = status => ['PAID','COMPLETED','FULFILLED'].includes(status) ? 'success' : ['FAILED','CANCELLED','REFUNDED'].includes(status) ? 'danger' : 'warning';
+export default function OrdersPage(){const[orders,setOrders]=useState([]);const[error,setError]=useState('');const[loading,setLoading]=useState(true);const[query,setQuery]=useState('');useEffect(()=>{apiFetch('/orders').then(setOrders).catch(err=>setError(err.message)).finally(()=>setLoading(false))},[]);const visible=useMemo(()=>orders.filter(order=>`${order.customerName} ${order.customerEmail} ${order.status}`.toLowerCase().includes(query.toLowerCase())),[orders,query]);const columns=[{key:'customer',label:'Customer',render:row=><div><strong>{row.customerName||'Customer'}</strong><div className="muted small">{row.customerEmail}</div></div>},{key:'status',label:'Status',render:row=><StatusBadge tone={tone(row.status)}>{row.status}</StatusBadge>},{key:'total',label:'Total',render:row=><strong>{money(row.totalCents)}</strong>},{key:'source',label:'Source',render:row=>row.attributionUtmSource||'Direct / unknown'},{key:'created',label:'Created',render:row=>new Date(row.createdAt).toLocaleDateString('en-CA')},{key:'action',label:'',render:row=><Link className="btn ghost" href={`/admin/manage/orders/${row.id}`}>View</Link>}];return <main className="container"><PageHeader eyebrow="Store operations" title="Orders" description="Track customer purchases, payment states, attribution, and fulfilment details." />{error?<ErrorState message={error}/>:loading?<LoadingState label="Loading orders"/>:<><FilterBar resultLabel={`${visible.length} of ${orders.length} orders`}><input type="search" aria-label="Search orders" placeholder="Search customer or status" value={query} onChange={event=>setQuery(event.target.value)}/></FilterBar><DataTable columns={columns} rows={visible} emptyTitle="No matching orders" emptyDescription="Orders will appear after customers complete checkout."/></>}</main>}

@@ -9,6 +9,7 @@ import { apiFetch } from '@/lib/api';
 const MARKETING_PATHS = new Set(['/', '/solutions', '/resources', '/pricing']);
 
 const marketingLinks = [
+  { href: '/loadboard', label: 'Load Board' },
   { href: '/solutions', label: 'Solutions' },
   { href: '/resources', label: 'Resources' },
   { href: '/pricing', label: 'Pricing' }
@@ -29,6 +30,7 @@ const adminLinks = [
 ];
 
 function getRouteMode(pathname = '/') {
+  if (pathname === '/loadboard' || pathname.startsWith('/loadboard/')) return 'loadboard';
   if (pathname.startsWith('/admin')) return 'admin';
   if (pathname.startsWith('/app')) return 'app';
   if (pathname.startsWith('/tenant/')) return 'tenant';
@@ -39,8 +41,15 @@ function getRouteMode(pathname = '/') {
 export default function Header() {
   const pathname = usePathname() || '/';
   const [tenantProfile, setTenantProfile] = useState(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [loadboardHost, setLoadboardHost] = useState(false);
 
-  const routeMode = useMemo(() => getRouteMode(pathname), [pathname]);
+  useEffect(() => {
+    const hostname = window.location.hostname;
+    setLoadboardHost(hostname === 'loads.localhost' || hostname === 'loads.loadlyx.local' || hostname.startsWith('loads.'));
+  }, []);
+
+  const routeMode = useMemo(() => loadboardHost ? 'loadboard' : getRouteMode(pathname), [loadboardHost, pathname]);
   const tenantSlug = useMemo(() => {
     if (routeMode !== 'tenant') return null;
     const [, , slug] = pathname.split('/');
@@ -95,23 +104,28 @@ export default function Header() {
     routeMode === 'admin' ? adminLinks :
     routeMode === 'app' ? appLinks :
     routeMode === 'tenant' ? tenantLinks :
-    marketingLinks;
+    routeMode === 'loadboard' ? [
+      { href: '/loadboard', label: 'Browse Loads' }
+    ] : marketingLinks;
 
   const brandText =
     routeMode === 'admin' ? 'Loadlyx Admin' :
     routeMode === 'app' ? 'Loadlyx App' :
     routeMode === 'tenant' ? (tenantProfile?.name || 'Tenant Storefront') :
-    'Loadlyx';
+    routeMode === 'loadboard' ? 'Freight Exchange' : 'Loadlyx';
 
   const brandHref =
     routeMode === 'admin' ? '/admin/dashboard' :
     routeMode === 'app' ? '/app/dashboard' :
     routeMode === 'tenant' && tenantSlug ? `/tenant/${tenantSlug}` :
-    '/';
+    routeMode === 'loadboard' ? '/loadboard' : '/';
+
+  const loadboardAuthPath = pathname.startsWith('/loadboard/login') || pathname.startsWith('/loadboard/signup') || (loadboardHost && ['/login', '/signup'].includes(pathname));
+  if (routeMode === 'admin' || routeMode === 'app' || loadboardAuthPath) return null;
 
   return (
     <header className="header">
-      <div className="container nav">
+      <div className={`container nav ${menuOpen ? 'mobile-open' : ''}`}>
         <Link href={brandHref} className="nav-brand">
           {routeMode === 'tenant' && tenantProfile?.branding?.logoUrl ? (
             <img src={tenantProfile.branding.logoUrl} alt={brandText} className="tenant-logo" />
@@ -119,13 +133,16 @@ export default function Header() {
             <span className="brand-mark">⬒</span>
           )}
           <span className="brand-copy">{brandText}</span>
+          {routeMode === 'loadboard' ? <small className="lx-powered-by">Powered by Loadlyx</small> : null}
         </Link>
 
-        <nav className="nav-links">
+        <button className="lx-public-menu" type="button" aria-expanded={menuOpen} aria-label="Toggle navigation" onClick={() => setMenuOpen(!menuOpen)}>☰</button>
+
+        <nav className="nav-links" aria-label="Primary navigation">
           {currentLinks.map((link) => {
             const active = pathname === link.href || (link.href !== '/' && pathname.startsWith(`${link.href}/`)) || pathname === link.href;
             return (
-              <Link key={link.href} href={link.href} className={active ? 'nav-link active-nav' : 'nav-link'}>
+              <Link key={link.href} href={link.href} onClick={() => setMenuOpen(false)} className={active ? 'nav-link active-nav' : 'nav-link'}>
                 {link.label}
               </Link>
             );
@@ -136,10 +153,11 @@ export default function Header() {
           <ThemeToggle />
           {routeMode === 'marketing' ? (
             <>
-              <Link href="/carriers/signup" className="btn secondary">Sign up for free</Link>
-              <Link href="/login" className="nav-link">Login</Link>
+              <Link href="/login" className="nav-link">Sign in</Link>
+              <Link href="/signup" className="btn">Start free</Link>
             </>
           ) : null}
+          {routeMode === 'loadboard' ? <Link href="/loadboard/login?next=/app/dashboard" className="btn">Sign in</Link> : null}
           {routeMode === 'tenant' ? <Link href="/admin/dashboard" className="nav-link">Tenant Admin</Link> : null}
         </div>
       </div>

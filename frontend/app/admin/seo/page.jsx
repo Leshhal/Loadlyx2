@@ -1,47 +1,6 @@
 'use client';
-
-import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useEffect, useState } from 'react';
 import { apiFetch } from '../../../lib/api';
-
-export default function SeoToolsPage() {
-  const [rows, setRows] = useState([]);
-  const [error, setError] = useState('');
-
-  useEffect(() => {
-    apiFetch('/admin/seo/missing').then(setRows).catch((err) => setError(err.message));
-  }, []);
-
-  return (
-    <main className="container grid" style={{ gap: 24 }}>
-      <section className="card">
-        <h1>SEO Tools</h1>
-        <p className="muted">Phase 1 SEO hygiene report for products missing important search fields.</p>
-        {error ? <p className="error">{error}</p> : null}
-      </section>
-
-      <section className="card">
-        <div className="row-between">
-          <h2>Products Missing SEO Coverage</h2>
-          <Link href="/admin/manage/products" className="btn secondary">Go to product management</Link>
-        </div>
-        <table className="table">
-          <thead><tr><th>Product</th><th>Category</th><th>SEO Title</th><th>Meta Description</th><th>Images</th><th>Missing ALT</th><th>Tags</th></tr></thead>
-          <tbody>
-            {rows.map((row) => (
-              <tr key={row.id}>
-                <td>{row.name}</td>
-                <td>{row.category || '-'}</td>
-                <td>{row.seoTitle || 'Missing'}</td>
-                <td>{row.metaDescription ? 'Present' : 'Missing'}</td>
-                <td>{row.imageCount}</td>
-                <td>{row.missingAltCount}</td>
-                <td>{row.tags.length ? row.tags.join(', ') : 'Missing'}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </section>
-    </main>
-  );
-}
+import { DataTable, ErrorState, LoadingState, PageHeader, StatusBadge } from '../../../components/ui/LoadlyxUI';
+export default function SeoToolsPage(){const[rows,setRows]=useState([]);const[error,setError]=useState('');const[loading,setLoading]=useState(true);useEffect(()=>{apiFetch('/admin/seo/missing').then(setRows).catch(err=>setError(err.message)).finally(()=>setLoading(false))},[]);const columns=[{key:'product',label:'Product',render:row=><div><strong>{row.name}</strong><div className="muted small">{row.category||'Uncategorized'}</div></div>},{key:'title',label:'SEO title',render:row=><StatusBadge tone={row.seoTitle?'success':'warning'}>{row.seoTitle?'Present':'Missing'}</StatusBadge>},{key:'meta',label:'Meta description',render:row=><StatusBadge tone={row.metaDescription?'success':'warning'}>{row.metaDescription?'Present':'Missing'}</StatusBadge>},{key:'images',label:'Images',render:row=>row.imageCount},{key:'alt',label:'Missing ALT',render:row=><StatusBadge tone={row.missingAltCount?'danger':'success'}>{row.missingAltCount}</StatusBadge>},{key:'tags',label:'Tags',render:row=>row.tags?.length?row.tags.join(', '):<span className="muted">Missing</span>}];return <main className="container"><PageHeader eyebrow="Organic discovery" title="SEO coverage" description="Identify storefront products that need stronger titles, descriptions, tags, or accessible image text." actions={<Link href="/admin/manage/products" className="btn">Open products</Link>} />{error?<ErrorState message={error}/>:loading?<LoadingState label="Auditing product SEO"/>:<DataTable columns={columns} rows={rows} emptyTitle="SEO coverage is complete" emptyDescription="Every published product currently has the required search and image fields."/>}</main>}

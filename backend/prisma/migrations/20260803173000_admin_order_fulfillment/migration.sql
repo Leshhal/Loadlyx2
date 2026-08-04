@@ -1,0 +1,10 @@
+CREATE TYPE "FulfillmentStatus" AS ENUM ('UNCONFIRMED', 'CONFIRMED', 'PROCESSING', 'SHIPPED', 'DELIVERED', 'CANCELED');
+
+ALTER TABLE "Order"
+ADD COLUMN "fulfillmentStatus" "FulfillmentStatus" NOT NULL DEFAULT 'UNCONFIRMED',
+ADD COLUMN "shippingCarrier" TEXT,
+ADD COLUMN "trackingNumber" TEXT,
+ADD COLUMN "confirmedAt" TIMESTAMP(3),
+ADD COLUMN "shippedAt" TIMESTAMP(3),
+ADD COLUMN "deliveredAt" TIMESTAMP(3),
+ADD COLUMN "refundedCents" INTEGER NOT NULL DEFAULT 0;

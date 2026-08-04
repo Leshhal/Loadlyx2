@@ -20,6 +20,8 @@ return hostname.replace('.loadlyx.com', '');
 return null;
 }
 
+const RESERVED_HOSTS = new Set(['www', 'admin', 'api', 'app', 'support', 'loadlyx', 'loads']);
+
 export async function tenantMiddleware(req, res, next) {
 try {
 const hostname = getHostname(req);
@@ -39,12 +41,27 @@ req.tenant = null;
 return next();
 }
 
-const tenant = await prisma.tenant.findUnique({
-where: { slug }
+const normalizedSlug = String(slug).trim().toLowerCase();
+if (RESERVED_HOSTS.has(normalizedSlug)) {
+req.tenant = null;
+return next();
+}
+
+const tenant = await prisma.tenant.findFirst({
+where: {
+OR: [
+{ slug: normalizedSlug },
+{ subdomain: normalizedSlug }
+]
+}
 });
 
 if (!tenant) {
 return res.status(404).json({ error: 'Tenant not found' });
+}
+
+if (!tenant.isActive) {
+return res.status(403).json({ error: 'Tenant is suspended' });
 }
 
 req.tenant = tenant;

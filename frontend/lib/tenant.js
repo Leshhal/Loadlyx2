@@ -7,12 +7,24 @@ const RESERVED_SUBDOMAINS = [
 'localhost'
 ];
 
+export function tenantSlugFromPath(pathname = '') {
+const match = String(pathname).match(/^\/tenant\/([^/]+)(?:\/|$)/i);
+if (!match) return null;
+const slug = decodeURIComponent(match[1]).trim().toLowerCase();
+return /^[a-z0-9][a-z0-9-]{1,62}$/.test(slug) && !RESERVED_SUBDOMAINS.includes(slug) ? slug : null;
+}
+
 export function getTenantSlug() {
 if (typeof window === 'undefined') {
 return null;
 }
 
 const host = window.location.hostname;
+const pathSlug = tenantSlugFromPath(window.location.pathname);
+if (pathSlug) {
+localStorage.setItem('tenantSlug', pathSlug);
+return pathSlug;
+}
 
 // localhost fallback
 if (host === 'localhost' || host === '127.0.0.1') {

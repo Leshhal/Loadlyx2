@@ -1,7 +1,14 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { apiFetch } from '../../../lib/api';
+import { adminFetch } from '../../../lib/adminFetch';
+
+async function request(path, options) {
+  const response = await adminFetch(path, options);
+  const data = await response.json();
+  if (!response.ok) throw new Error(data?.error || 'Request failed');
+  return data;
+}
 
 const emptyPage = () => ({ title: '', slug: '', navLabel: '', content: '', heroImageUrl: '', showInNav: true });
 
@@ -15,6 +22,15 @@ const emptyBranding = {
   trustCopy: '',
   serviceHeading: '',
   pageImageUrl: '',
+  footerHeading: '',
+  footerDescription: '',
+  contactEmail: '',
+  contactPhone: '',
+  contactAddress: '',
+  facebookUrl: '',
+  instagramUrl: '',
+  xUrl: '',
+  linkedinUrl: '',
   tenantPages: []
 };
 
@@ -29,7 +45,7 @@ export default function TenantExperiencePage() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    apiFetch('/admin/tenant-settings')
+    request('/admin/tenant-settings')
       .then((data) => setForm({
         id: data.id || '',
         name: data.name || '',
@@ -116,7 +132,7 @@ export default function TenantExperiencePage() {
       const endpoint = form.id ? `/admin/tenant/${form.id}` : '/admin/tenant';
       const method = form.id ? 'PUT' : 'POST';
 
-      const saved = await apiFetch(endpoint, {
+      const saved = await request(endpoint, {
         method,
         body: JSON.stringify(payload)
       });
@@ -171,6 +187,26 @@ export default function TenantExperiencePage() {
           <div className="field"><label>Primary Color</label><input value={form.branding.primaryColor} onChange={(e) => updateBranding('primaryColor', e.target.value)} placeholder="#2f6df6" /></div>
           <div className="field"><label>Accent Color</label><input value={form.branding.accentColor} onChange={(e) => updateBranding('accentColor', e.target.value)} placeholder="#f2b843" /></div>
         </div>
+
+        <section className="card" style={{ borderStyle: 'dashed' }}>
+          <h2>Footer and social profiles</h2>
+          <p className="muted">These details appear in the tenant storefront footer and can be changed independently for each tenant.</p>
+          <div className="grid grid-2">
+            <div className="field"><label>Footer heading</label><input value={form.branding.footerHeading} onChange={(e) => updateBranding('footerHeading', e.target.value)} placeholder={form.name || 'Business name'} /></div>
+            <div className="field"><label>Contact email</label><input type="email" value={form.branding.contactEmail} onChange={(e) => updateBranding('contactEmail', e.target.value)} /></div>
+          </div>
+          <div className="field"><label>Footer description</label><textarea rows={3} value={form.branding.footerDescription} onChange={(e) => updateBranding('footerDescription', e.target.value)} placeholder="Tell visitors what your business does." /></div>
+          <div className="grid grid-2">
+            <div className="field"><label>Contact phone</label><input value={form.branding.contactPhone} onChange={(e) => updateBranding('contactPhone', e.target.value)} /></div>
+            <div className="field"><label>Contact address</label><input value={form.branding.contactAddress} onChange={(e) => updateBranding('contactAddress', e.target.value)} /></div>
+          </div>
+          <div className="grid grid-2">
+            <div className="field"><label>Facebook URL</label><input type="url" value={form.branding.facebookUrl} onChange={(e) => updateBranding('facebookUrl', e.target.value)} /></div>
+            <div className="field"><label>Instagram URL</label><input type="url" value={form.branding.instagramUrl} onChange={(e) => updateBranding('instagramUrl', e.target.value)} /></div>
+            <div className="field"><label>X URL</label><input type="url" value={form.branding.xUrl} onChange={(e) => updateBranding('xUrl', e.target.value)} /></div>
+            <div className="field"><label>LinkedIn URL</label><input type="url" value={form.branding.linkedinUrl} onChange={(e) => updateBranding('linkedinUrl', e.target.value)} /></div>
+          </div>
+        </section>
 
         <section className="card" style={{ borderStyle: 'dashed' }}>
           <div className="action-row" style={{ justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>

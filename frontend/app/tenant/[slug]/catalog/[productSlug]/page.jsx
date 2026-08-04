@@ -53,7 +53,7 @@ return (
 <h1 style={styles.title}>{product.name}</h1>
 
 <p style={styles.description}>
-{product.description || 'Product details coming soon.'}
+{product.description || 'No description has been provided for this product.'}
 </p>
 
 <div style={styles.price}>

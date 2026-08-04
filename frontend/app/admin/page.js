@@ -1,21 +1,20 @@
 'use client';
 
 import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { getStoredUser } from '../../lib/auth';
 
 export default function AdminIndexPage() {
-const router = useRouter();
-
 useEffect(() => {
 const token = localStorage.getItem('token');
 
 if (!token) {
-router.replace('/login');
+window.location.replace('/login');
 return;
 }
 
-router.replace('/admin/dashboard');
-}, [router]);
+const role = getStoredUser()?.role;
+window.location.replace(role === 'TENANT_ADMIN' ? '/admin/dashboard' : '/admin/platform');
+}, []);
 
 return <div style={{ padding: 20 }}>Loading admin...</div>;
 }

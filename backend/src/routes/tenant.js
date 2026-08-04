@@ -31,8 +31,23 @@ bundleDiscountsEnabled: Boolean(branding.bundleDiscountsEnabled),
 freeShippingThreshold: branding.freeShippingThreshold || null,
 saleEndsAt: branding.saleEndsAt || '',
 pageImageUrl: branding.pageImageUrl || '',
+footerHeading: branding.footerHeading || tenant.name,
+footerDescription: branding.footerDescription || '',
+contactEmail: branding.contactEmail || tenant.email || '',
+contactPhone: branding.contactPhone || '',
+contactAddress: branding.contactAddress || '',
+facebookUrl: branding.facebookUrl || '',
+instagramUrl: branding.instagramUrl || '',
+xUrl: branding.xUrl || '',
+linkedinUrl: branding.linkedinUrl || '',
 tenantPages: branding.tenantPages || []
-}
+},
+theme: tenant.themeActivation ? {
+key: tenant.themeActivation.theme.key,
+name: tenant.themeActivation.theme.name,
+version: tenant.themeActivation.theme.version,
+settings: tenant.themeActivation.settingsJson
+} : null
 };
 }
 
@@ -41,15 +56,10 @@ try {
 const raw = String(req.params.slug || '').trim();
 const slug = raw.toLowerCase();
 
-const tenants = await prisma.tenant.findMany({
-take: 50,
-orderBy: { id: 'desc' }
+const tenant = await prisma.tenant.findFirst({
+where: { OR: [{ subdomain: slug }, { slug }] },
+include: { themeActivation: { include: { theme: true } } }
 });
-
-const tenant =
-tenants.find((t) => String(t.subdomain || '').trim().toLowerCase() === slug) ||
-tenants.find((t) => String(t.slug || '').trim().toLowerCase() === slug) ||
-tenants.find((t) => String(t.name || '').trim().toLowerCase() === slug);
 
 if (!tenant) {
 return res.status(404).json({ error: 'Tenant not found' });
@@ -68,11 +78,13 @@ let tenant = req.tenant || null;
 
 if (!tenant) {
 tenant = await prisma.tenant.findFirst({
-where: { isMaster: true }
+where: { isMaster: true },
+include: { themeActivation: { include: { theme: true } } }
 });
 } else {
 tenant = await prisma.tenant.findUnique({
-where: { id: tenant.id }
+where: { id: tenant.id },
+include: { themeActivation: { include: { theme: true } } }
 });
 }
 

@@ -3,16 +3,25 @@ setlocal
 
 REM ============================================================
 REM Loadlyx Windows Double-Click Launcher
-REM This launcher runs the full automatic setup script in Git Bash.
+REM Starts Docker Desktop, project-specific PostgreSQL, migrations, backend,
+REM and frontend through the automatic Git Bash setup script.
 REM ============================================================
 
 set "SCRIPT_DIR=%~dp0"
 set "AUTO_SCRIPT=%SCRIPT_DIR%run_loadlyx_auto.sh"
+set "COMPOSE_FILE=%SCRIPT_DIR%docker-compose.local.yml"
 
 if not exist "%AUTO_SCRIPT%" (
     echo ERROR: Could not find run_loadlyx_auto.sh in:
     echo %SCRIPT_DIR%
-    pause
+    call :KEEP_OPEN
+    exit /b 1
+)
+
+if not exist "%COMPOSE_FILE%" (
+    echo ERROR: Could not find docker-compose.local.yml in:
+    echo %SCRIPT_DIR%
+    call :KEEP_OPEN
     exit /b 1
 )
 
@@ -25,13 +34,13 @@ if not exist "%GIT_BASH%" (
     echo ERROR: Git Bash was not found.
     echo Please install Git for Windows first:
     echo https://git-scm.com/download/win
-    pause
+    call :KEEP_OPEN
     exit /b 1
 )
 
 echo.
 echo ==============================================
-echo Loadlyx Automatic Setup Launcher
+echo Loadlyx Full Local Environment Launcher
 echo ==============================================
 echo.
 echo Choose one option:
@@ -47,7 +56,7 @@ if "%CHOICE%"=="2" goto FOLDERMODE
 if "%CHOICE%"=="3" goto CURRENTMODE
 
 echo Invalid choice.
-pause
+call :KEEP_OPEN
 exit /b 1
 
 :ZIPMODE
@@ -64,7 +73,7 @@ goto RUNSCRIPT
 
 :RUNSCRIPT
 echo.
-echo Starting Loadlyx setup...
+echo Starting Loadlyx, Docker, and its dedicated PostgreSQL database...
 echo.
 
 "%GIT_BASH%" "%AUTO_SCRIPT%" "%INPUT_PATH%"
@@ -75,5 +84,17 @@ echo Script finished.
 echo Check the output above for URLs and any errors.
 echo ==============================================
 echo.
-pause
+call :KEEP_OPEN
 endlocal
+exit /b 0
+
+:KEEP_OPEN
+echo.
+echo This window will stay open so you can review the results.
+echo Type EXIT and press Enter when you want to close it.
+:KEEP_OPEN_LOOP
+set "KEEP_OPEN_COMMAND="
+set /p KEEP_OPEN_COMMAND=Loadlyx launcher^> 
+if /i "%KEEP_OPEN_COMMAND%"=="EXIT" exit /b 0
+echo Type EXIT and press Enter to close this window.
+goto KEEP_OPEN_LOOP

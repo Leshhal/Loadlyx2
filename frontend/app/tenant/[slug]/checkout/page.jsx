@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import CheckoutFlow from './checkoutflow';
+import CartCheckoutPage from '../../../checkout/page';
 
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
@@ -18,6 +19,7 @@ return res.json();
 }
 
 export default async function TenantCheckoutPage({ params, searchParams }) {
+if (searchParams?.cart === '1') return <CartCheckoutPage />;
 const productSlug = searchParams?.product;
 const quantity = Number(searchParams?.qty || 1);
 
@@ -26,13 +28,6 @@ if (!productSlug) return notFound();
 const product = await getProduct(params.slug, productSlug);
 
 if (!product) return notFound();
-
-const priceCents = Number(product.priceCents || Math.round(Number(product.price || 0) * 100));
-const subtotalCents = priceCents * quantity;
-
-const platformFeeRate = 0.08; // Loadlyx fee, adjust later
-const platformFeeCents = Math.round(subtotalCents * platformFeeRate);
-const tenantNetCents = subtotalCents - platformFeeCents;
 
 return (
 <main style={styles.page}>

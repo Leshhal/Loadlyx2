@@ -1,6 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api';
 
 export default function CheckoutFlow({ product, tenantSlug, initialQty }) {
 const [step, setStep] = useState('summary');
@@ -15,9 +17,23 @@ const [city, setCity] = useState('');
 const [postalCode, setPostalCode] =useState('');
 const [country, setCountry] = useState('Canada');
 const [province, setProvince] = useState('');
+const [error, setError] = useState('');
+const [paymentMethod, setPaymentMethod] = useState('card');
+const [cryptoAsset, setCryptoAsset] = useState('USDC');
+const [cryptoInvoice, setCryptoInvoice] = useState(null);
+
+useEffect(() => {
+if (!cryptoInvoice?.id || ['PAID','OVERPAID','EXPIRED','FAILED','REFUNDED'].includes(cryptoInvoice.status)) return undefined;
+const timer = window.setInterval(async () => {
+const response = await fetch(`${API_URL}/crypto/invoices/${cryptoInvoice.id}`);
+if (response.ok) setCryptoInvoice(await response.json());
+}, 5000);
+return () => window.clearInterval(timer);
+}, [cryptoInvoice]);
 
 const handleCheckout = async () => {
-const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/checkout/create-session`, {
+setError('');
+const res = await fetch(`${API_URL}/checkout/create-session`, {
 method: 'POST',
 headers: {
 'Content-Type': 'application/json',
@@ -38,13 +54,21 @@ postalCode
 
 const data = await res.json();
 
-if (data.url) {
-window.location.href = data.url; // redirect to Stripe
-}
+if (!res.ok || !data.url) return setError(data.error || 'Stripe checkout URL was not returned');
+window.location.href = data.url;
+};
+
+const handleCryptoCheckout = async () => {
+setError('');
+const res = await fetch(`${API_URL}/crypto/invoices`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-tenant-slug': tenantSlug }, body: JSON.stringify({ productSlug: product.slug, quantity, asset: cryptoAsset, name, email, country: country === 'Canada' ? 'CA' : 'US', province, address, city, postalCode }) });
+const data = await res.json();
+if (!res.ok) return setError(data.error || 'Crypto invoice could not be created');
+setCryptoInvoice(data);
 };
 
 return (
 <>
+{error ? <p style={{ color: '#b91c1c' }}>{error}</p> : null}
 {step === 'summary' ? (
 <>
 <div style={styles.item}>
@@ -72,6 +96,7 @@ Continue to Payment
 </>
 ) : (
 <>
+{cryptoInvoice ? <section style={styles.cryptoInvoice}><span style={styles.cryptoBadge}>{cryptoInvoice.status}</span><h2>Send {Number(cryptoInvoice.cryptoAmount).toFixed(8)} {cryptoInvoice.asset}</h2><p style={styles.address}>{cryptoInvoice.paymentAddress}</p><p>Confirmations: {cryptoInvoice.confirmations} / {cryptoInvoice.requiredConfirmations}</p><p>Invoice expires {new Date(cryptoInvoice.expiresAt).toLocaleString()}.</p><p style={styles.meta}>Order fulfilment begins only after the required confirmations are reached.</p></section> : <>
 <div style={styles.form}>
 <label style={styles.label}>Full Name</label>
 <input
@@ -89,7 +114,7 @@ onChange={(e) => setEmail(e.target.value)}
 />
 
 <label style={styles.label}>Shipping Country</label>
-<select style={styles.input} defaultValue="Canada">
+<select style={styles.input} value={country} onChange={(e) => setCountry(e.target.value)}>
 <option>Canada</option>
 <option>United States</option>
 </select>
@@ -123,42 +148,24 @@ value={province}
 onChange={(e) => setProvince(e.target.value)}
 />
 
+<label style={styles.label}>Payment method</label>
+<select style={styles.input} value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)}><option value="card">Credit or debit card</option><option value="crypto">Cryptocurrency</option></select>
+{paymentMethod === 'crypto' ? <><label style={styles.label}>Crypto asset</label><select style={styles.input} value={cryptoAsset} onChange={(e) => setCryptoAsset(e.target.value)}>{['BTC','ETH','SOL','ADA','USDC','USDT'].map((asset) => <option key={asset}>{asset}</option>)}</select></> : null}
+
 </div>
 
 <button
 type="button"
 style={styles.button}
-onClick={async () => {
-const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/checkout/create-session`, {
-method: 'POST',
-headers: {
-'Content-Type': 'application/json',
-'x-tenant-slug': tenantSlug
-},
-body: JSON.stringify({
-productSlug: product.slug,
-quantity,
-name,
-email
-})
-});
-
-const data = await res.json();
-
-if (!data.url) {
-alert('Stripe checkout URL was not returned');
-return;
-}
-
-window.location.href = data.url;
-}}
+onClick={paymentMethod === 'crypto' ? handleCryptoCheckout : handleCheckout}
 >
-Pay ${(subtotalCents / 100).toFixed(2)}
+{paymentMethod === 'crypto' ? 'Create Crypto Invoice' : `Pay $${(subtotalCents / 100).toFixed(2)}`}
 </button>
 
 <button type="button" style={styles.secondaryButton} onClick={() => setStep('summary')}>
 Back
 </button>
+</>}
 </>
 )}
 </>
@@ -226,5 +233,8 @@ padding: '14px 22px',
 fontSize: 16,
 fontWeight: 900,
 cursor: 'pointer'
-}
+},
+cryptoInvoice: { marginTop: 24, padding: 24, borderRadius: 18, background: '#f8fafc', color: '#0f172a' },
+cryptoBadge: { display: 'inline-block', padding: '6px 10px', borderRadius: 999, background: '#dbeafe', color: '#1d4ed8', fontWeight: 800 },
+address: { overflowWrap: 'anywhere', padding: 12, borderRadius: 10, background: '#e2e8f0', fontFamily: 'monospace' }
 };

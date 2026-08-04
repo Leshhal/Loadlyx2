@@ -1,12 +1,14 @@
 import express from 'express';
 import Stripe from 'stripe';
 import { prisma } from '../db/prisma.js';
+import { env } from '../config/env.js';
 
 const router = express.Router();
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+const stripe = env.stripeSecretKey ? new Stripe(env.stripeSecretKey) : null;
 
 router.post('/create-session', async (req, res) => {
 try {
+if (!stripe) return res.status(503).json({ error: 'Card checkout is not configured' });
 const tenantSlug = req.headers['x-tenant-slug'];
 const { productSlug, quantity, name, email, country, province, address, city, postalCode } = req.body;
 
@@ -35,10 +37,10 @@ const qty = Number(quantity || 1);
 if (!unitAmount || unitAmount <= 0) {
 return res.status(400).json({ error: 'Invalid product price' });
 }
+if (!Number.isSafeInteger(qty) || qty < 1 || qty > 100) return res.status(400).json({ error: 'Quantity must be between 1 and 100' });
+if (!String(email || '').includes('@')) return res.status(400).json({ error: 'Valid customer email is required' });
 
 const subtotal = unitAmount * qty;
-const fee = Math.round(subtotal * 0.08);
-const net = subtotal - fee;
 
 const customer = await prisma.customer.upsert({
 where: {
@@ -84,17 +86,6 @@ shippingProvince: province || null
 }
 });
 
-await prisma.tenantLedger.create({
-data: {
-tenantId: tenant.id,
-orderId: order.id,
-grossCents: subtotal,
-feeCents: fee,
-netCents: net,
-status: 'pending'
-}
-});
-
 const session = await stripe.checkout.sessions.create({
 payment_method_types: ['card'],
 mode: 'payment',
@@ -116,8 +107,8 @@ orderId: order.id,
 tenantId: tenant.id,
 customerId: customer.id
 },
-success_url: 'http://localhost:3000/success',
-cancel_url: 'http://localhost:3000/cancel'
+success_url: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/success`,
+cancel_url: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/cancel`
 });
 
 await prisma.order.update({

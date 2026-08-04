@@ -2,9 +2,14 @@ import Link from 'next/link';
 
 export default function TenantLanding({ tenant }) {
   const branding = tenant?.branding || {};
+  const theme = tenant?.theme?.settings || {};
+  const themeTokens = theme.tokens || {};
   const themeStyle = {
-    '--tenant-primary': branding.primaryColor || '#2f6df6',
-    '--tenant-accent': branding.accentColor || '#f2b843'
+    '--tenant-primary': branding.primaryColor || themeTokens.primaryColor || '#2f6df6',
+    '--tenant-accent': branding.accentColor || themeTokens.accentColor || '#f2b843',
+    '--tenant-button-radius': themeTokens.buttonRadius || '12px',
+    maxWidth: themeTokens.pageWidth || undefined,
+    fontFamily: themeTokens.fontFamily === 'serif' ? 'Georgia, serif' : undefined
   };
   const heroTitle = branding.heroTitle || `${tenant?.name || 'Tenant'} moving store and booking hub`;
   const heroSubtitle = branding.heroSubtitle || 'Book moving support, shop supplies, and start a quote from one branded tenant experience.';
@@ -16,7 +21,7 @@ export default function TenantLanding({ tenant }) {
   const customPages = (branding.tenantPages || []).filter((page) => page?.slug && page?.title);
 
   return (
-    <main className="container grid" style={{ gap: 24, ...themeStyle }}>
+    <main className="container grid" data-store-theme={tenant?.theme?.key || 'loadlyx-classic'} style={{ gap: 24, ...themeStyle }}>
       <section className="card hero tenant-hero">
         <div className="hero-copy">
           <div className="stack-sm">

@@ -1,0 +1,23 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: loadlyx-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${LOADLYX_POSTGRES_USER}
+      POSTGRES_PASSWORD: ${LOADLYX_POSTGRES_PASSWORD}
+      POSTGRES_DB: ${LOADLYX_POSTGRES_DB}
+    ports:
+      - "${LOADLYX_POSTGRES_PORT:-55432}:5432"
+    volumes:
+      - loadlyx-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${LOADLYX_POSTGRES_USER} -d ${LOADLYX_POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 5s
+
+volumes:
+  loadlyx-postgres-data:
+    name: loadlyx-postgres-data
