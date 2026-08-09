@@ -304,6 +304,7 @@ model User {
 
   role            UserRole  @default(MARKETPLACE_USER)
   isActive        Boolean   @default(true)
+  isTestAccount   Boolean   @default(false)
   emailVerifiedAt DateTime?
   lastLoginAt     DateTime?
 
@@ -335,6 +336,7 @@ model User {
 
   @@index([tenantId])
   @@index([role])
+  @@index([isTestAccount])
 }
 
 enum AuthTokenType {
