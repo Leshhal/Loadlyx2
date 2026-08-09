@@ -34,9 +34,11 @@ shippingState: ''
 const [message, setMessage] = useState('');
 const [loading, setLoading] = useState(false);
 const [shippingPreviewData, setShippingPreviewData] = useState(null);
+const [paymentMethods, setPaymentMethods] = useState(null);
 
 useEffect(() => {
 setCart(loadCart());
+apiFetch('/orders/payment-methods').then(setPaymentMethods).catch(() => setPaymentMethods(null));
 }, []);
 
 const subtotal = useMemo(
@@ -159,6 +161,7 @@ ${((item.product.priceCents * item.quantity) / 100).toFixed(2)}
 </div>
 
 <div className="card">
+{paymentMethods ? <div className="grid" style={{ gap: 10, marginBottom: 18 }}><strong>Payment options for this store</strong><div className="action-row"><span className="badge">Card: {paymentMethods.card.status}</span><span className="badge">PayPal: {paymentMethods.paypal.status}</span><span className="badge">Crypto: {paymentMethods.crypto.status}</span></div>{paymentMethods.crypto.status === 'MOCK' ? <p className="muted small">Crypto is in test-only mock mode and cannot collect real funds.</p> : null}</div> : null}
 <form className="grid" style={{ gap: 14 }} onSubmit={submitCheckout}>
 <div className="field">
 <label>Full Name</label>

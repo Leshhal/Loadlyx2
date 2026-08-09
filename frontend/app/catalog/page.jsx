@@ -19,6 +19,7 @@ return `loadlyx_cart_${getTenantSlug() || 'default'}`;
 function saveCart(nextCart) {
 if (typeof window === 'undefined') return;
 window.localStorage.setItem(getCartStorageKey(), JSON.stringify(nextCart));
+window.dispatchEvent(new CustomEvent('loadlyx:cart-updated', { detail: nextCart }));
 }
 
 function loadCart() {
@@ -41,7 +42,8 @@ function CatalogPageContent() {
   const router = useRouter();
   const activeTag = searchParams.get('tag');
   const addProductId = searchParams.get('add');
-  const [activeCategory, setActiveCategory] = useState('all');
+  const requestedCategory = searchParams.get('category') || 'all';
+  const [activeCategory, setActiveCategory] = useState(requestedCategory);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeRegion, setActiveRegion] = useState('all');
   const [priceBand, setPriceBand] = useState('all');
@@ -53,6 +55,10 @@ function CatalogPageContent() {
     setCart(loadCart());
     try { setWishlist(JSON.parse(window.localStorage.getItem('loadlyx_store_wishlist') || '[]')); } catch {}
   }, []);
+
+  useEffect(() => {
+    setActiveCategory(requestedCategory);
+  }, [requestedCategory]);
 
   useEffect(() => {
     apiFetch(`/tenant/by-slug/${getTenantSlug()}`)
@@ -87,6 +93,14 @@ function CatalogPageContent() {
   function removeFromCart(productId) {
     setCart((current) => {
       const next = current.filter((item) => item.productId !== productId);
+      saveCart(next);
+      return next;
+    });
+  }
+
+  function changeQuantity(productId, delta) {
+    setCart((current) => {
+      const next = current.map((item) => item.productId === productId ? { ...item, quantity: Math.max(1, item.quantity + delta) } : item);
       saveCart(next);
       return next;
     });
@@ -220,14 +234,14 @@ function CatalogPageContent() {
                 <article className="card product-card" key={product.id}>
                   <span className="badge">{product.category?.name || 'Uncategorized'}</span>
                   <div className="product-urgency">{(product.badges || []).filter((badge) => badge.badgeType !== 'PERCENTAGE' || product.salePriceCents).slice(0, 2).map((badge) => <span key={badge.id} className="badge badge-gold" title={badge.tooltip || ''}>{badge.label}</span>)}</div>
-                  <div className="product-image">
+                  <Link className="product-image" href={`${tenantBase}/catalog/${product.slug}`} aria-label={`View ${product.name}`}>
                     {product.primaryImage?.url ? (
                       <img src={product.primaryImage.url} alt={product.primaryImage.altText || product.name} loading="lazy" />
                     ) : <div style={{ height: '100%', display: 'grid', placeItems: 'center', color: '#8ca4d1' }}>No image</div>}
-                  </div>
+                  </Link>
                   <div className="product-meta">
                     <div>
-                      <h3 className="product-title">{product.name}</h3>
+                      <h3 className="product-title"><Link href={`${tenantBase}/catalog/${product.slug}`}>{product.name}</Link></h3>
                       {product.ratingCount ? <div className="rating"><span aria-label={`${Number(product.averageRating || 0).toFixed(1)} out of 5`}>★ {Number(product.averageRating || 0).toFixed(1)}</span> <span className="muted">({product.ratingCount})</span></div> : <div className="muted small">No verified reviews yet</div>}
                     </div>
                     <div className="price">{product.productType === 'RENTAL' ? `$${(Number(product.weeklyRateCents || product.priceCents) / 100).toFixed(2)}/week` : `$${(product.priceCents / 100).toFixed(2)}`}</div>
@@ -248,6 +262,7 @@ function CatalogPageContent() {
                   </div>
                   <div className="product-actions">
                     <button className="btn" onClick={() => addToCart(product)}>Add to Cart</button>
+                    <Link className="btn secondary" href={`${tenantBase}/catalog/${product.slug}`}>View product</Link>
                     <button className="btn secondary" type="button" onClick={() => setQuickView(product)}>Quick view</button>
                     <button className="btn ghost" type="button" onClick={() => toggleWishlist(product.id)} aria-pressed={wishlist.includes(product.id)}>{wishlist.includes(product.id) ? 'Saved' : 'Wishlist'}</button>
                   </div>
@@ -316,7 +331,7 @@ function CatalogPageContent() {
         </div>
       </section>
       <Drawer open={Boolean(quickView)} title={quickView?.name} description={quickView?.category?.name || 'Product details'} onClose={() => setQuickView(null)} footer={quickView ? <><Link className="btn secondary" href={tenantSlug ? `${tenantBase}/catalog/${quickView.slug}` : `/products/${quickView.slug}`}>Full details</Link><button className="btn" type="button" onClick={() => { addToCart(quickView); setQuickView(null); }}>Add to cart</button></> : null}>{quickView ? <div className="grid" style={{ gap: 18 }}>{quickView.primaryImage?.url ? <img className="lx-quick-image" src={quickView.primaryImage.url} alt={quickView.primaryImage.altText || quickView.name} /> : null}<strong className="price">${(quickView.priceCents / 100).toFixed(2)}</strong><p className="muted">{quickView.description}</p><div className="lx-detail-grid"><div><span>Stock</span><strong>{quickView.stock ?? 'Not listed'}</strong></div><div><span>Weight</span><strong>{Number(quickView.weightKg || 0).toFixed(2)} kg</strong></div></div></div> : null}</Drawer>
-      <Drawer open={cartOpen} title="Your moving-supply cart" description={`${cart.reduce((sum, item) => sum + item.quantity, 0)} items`} onClose={() => setCartOpen(false)} footer={cart.length ? <button className="btn" type="button" onClick={startCheckout}>Secure checkout</button> : null}>{cart.length ? <div className="grid" style={{ gap: 12 }}>{cart.map((item) => <div className="summary-line" key={item.productId}><div><strong>{item.product.name}</strong><div className="muted small">Quantity {item.quantity}</div></div><div><strong>${((item.product.priceCents * item.quantity) / 100).toFixed(2)}</strong><button type="button" className="btn ghost" onClick={() => removeFromCart(item.productId)}>Remove</button></div></div>)}<div className="total-line"><span>Subtotal</span><span>${(subtotal / 100).toFixed(2)}</span></div></div> : <EmptyState title="Your cart is empty" description="Add an individual product or a recommended moving kit." />}</Drawer>
+      <Drawer open={cartOpen} title="Your moving-supply cart" description={`${cart.reduce((sum, item) => sum + item.quantity, 0)} items`} onClose={() => setCartOpen(false)} footer={cart.length ? <button className="btn" type="button" onClick={startCheckout}>Secure checkout</button> : null}>{cart.length ? <div className="grid" style={{ gap: 12 }}>{cart.map((item) => <div className="summary-line" key={item.lineKey || item.productId}><div><strong>{item.product.name}</strong><div className="action-row"><button type="button" className="btn ghost" aria-label={`Decrease ${item.product.name} quantity`} onClick={() => changeQuantity(item.productId, -1)}>−</button><span className="muted small">Quantity {item.quantity}</span><button type="button" className="btn ghost" aria-label={`Increase ${item.product.name} quantity`} onClick={() => changeQuantity(item.productId, 1)}>+</button></div></div><div><strong>${((item.product.priceCents * item.quantity) / 100).toFixed(2)}</strong><button type="button" className="btn ghost" onClick={() => removeFromCart(item.productId)}>Remove</button></div></div>)}<div className="total-line"><span>Subtotal</span><span>${(subtotal / 100).toFixed(2)}</span></div></div> : <EmptyState title="Your cart is empty" description="Add an individual product or a recommended moving kit." />}</Drawer>
     </main>
   );
 }

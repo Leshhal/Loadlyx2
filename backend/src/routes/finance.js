@@ -24,7 +24,7 @@ function jsonValue(value) {
 async function resolvePlan(code) {
   const normalized = String(code || '').trim().toUpperCase();
   const stored = await prisma.subscriptionPlan.findUnique({ where: { code: normalized } });
-  if (stored?.isActive) return { code: stored.code, name: stored.name, monthlyPriceCents: stored.monthlyPriceCents, annualPriceCents: stored.annualPriceCents, currency: stored.currency, features: stored.featuresJson, entitlements: stored.entitlementsJson };
+  if (stored?.isActive) return { code: stored.code, name: stored.name, monthlyPriceCents: stored.monthlyPriceCents, annualPriceCents: stored.annualPriceCents, currency: stored.currency, commissionBps: stored.storeCommissionBps, features: stored.featuresJson, entitlements: stored.entitlementsJson };
   return getSubscriptionPlan(normalized);
 }
 
@@ -50,6 +50,18 @@ router.put('/subscription', requireAuth, tenantAdminOnly, async (req, res) => {
       create: { tenantId: req.user.tenantId, planCode: plan.code, monthlyPriceCents: plan.monthlyPriceCents, currency: plan.currency || 'cad', status: 'TRIALING' }
     });
     await tx.tenant.update({ where: { id: req.user.tenantId }, data: { subscriptionPlan: plan.code.toLowerCase() } });
+    const configuredPlan = getSubscriptionPlan(plan.code);
+    if (configuredPlan) {
+      const currentPolicy = await tx.commissionPolicy.findUnique({ where: { tenantId: req.user.tenantId } });
+      const managedRates = new Set([300, 550, 650, 700, 800]);
+      if (!currentPolicy || (managedRates.has(currentPolicy.storeCommissionBps) && managedRates.has(currentPolicy.marketplaceCommissionBps))) {
+        await tx.commissionPolicy.upsert({
+          where: { tenantId: req.user.tenantId },
+          update: { storeCommissionBps: configuredPlan.commissionBps, marketplaceCommissionBps: configuredPlan.commissionBps },
+          create: { scopeKey: `TENANT:${req.user.tenantId}`, tenantId: req.user.tenantId, storeCommissionBps: configuredPlan.commissionBps, marketplaceCommissionBps: configuredPlan.commissionBps }
+        });
+      }
+    }
     await tx.auditEvent.create({ data: {
       actorUserId: req.user.userId, action: before ? 'SUBSCRIPTION_PLAN_CHANGED' : 'SUBSCRIPTION_CREATED',
       entityType: 'SUBSCRIPTION', entityId: updated.id, tenantId: req.user.tenantId,
@@ -75,7 +87,7 @@ router.post('/subscription/cancel', requireAuth, tenantAdminOnly, async (req, re
 });
 
 router.get('/admin/policies', requireAuth, requirePlatformRole, async (_req, res) => {
-  return res.json({ policies: await prisma.commissionPolicy.findMany({ orderBy: { scopeKey: 'asc' } }) });
+  return res.json({ policies: await prisma.commissionPolicy.findMany({ include: { tenant: { select: { id: true, name: true, slug: true } } }, orderBy: { scopeKey: 'asc' } }) });
 });
 
 router.put('/admin/plans/:code', requireAuth, requirePlatformRole, async (req, res) => {
@@ -85,15 +97,17 @@ router.put('/admin/plans/:code', requireAuth, requirePlatformRole, async (req, r
   const monthlyPriceCents = Number(req.body.monthlyPriceCents);
   const features = Array.isArray(req.body.features) ? req.body.features.map(String).filter(Boolean) : null;
   const annualPriceCents = Number(req.body.annualPriceCents);
+  const storeCommissionBps = Number(req.body.storeCommissionBps);
+  const marketplaceCommissionBps = Number(req.body.marketplaceCommissionBps);
   const entitlements = req.body.entitlements && typeof req.body.entitlements === 'object' && !Array.isArray(req.body.entitlements) ? req.body.entitlements : null;
   const reason = String(req.body.reason || '').trim();
-  if (!name || !Number.isSafeInteger(monthlyPriceCents) || monthlyPriceCents < 0 || !Number.isSafeInteger(annualPriceCents) || annualPriceCents < 0 || !features || !entitlements || !reason) return res.status(400).json({ error: 'Name, monthly and annual prices, features, entitlements, and reason are required' });
+  if (!name || !Number.isSafeInteger(monthlyPriceCents) || monthlyPriceCents < 0 || !Number.isSafeInteger(annualPriceCents) || annualPriceCents < 0 || !validBps(storeCommissionBps) || !validBps(marketplaceCommissionBps) || !features || !entitlements || !reason) return res.status(400).json({ error: 'Name, pricing, commission rates, features, entitlements, and reason are required' });
   const before = await prisma.subscriptionPlan.findUnique({ where: { code } });
   const plan = await prisma.$transaction(async (tx) => {
     const updated = await tx.subscriptionPlan.upsert({
       where: { code },
-      update: { name, monthlyPriceCents, annualPriceCents, featuresJson: features, entitlementsJson: entitlements, displayOrder: Number(req.body.displayOrder || 0), effectiveAt: req.body.effectiveAt ? new Date(req.body.effectiveAt) : new Date(), grandfatherExisting: req.body.grandfatherExisting !== false, isActive: req.body.isActive !== false },
-      create: { code, name, monthlyPriceCents, annualPriceCents, featuresJson: features, entitlementsJson: entitlements, displayOrder: Number(req.body.displayOrder || 0), effectiveAt: req.body.effectiveAt ? new Date(req.body.effectiveAt) : new Date(), grandfatherExisting: req.body.grandfatherExisting !== false, isActive: req.body.isActive !== false }
+      update: { name, monthlyPriceCents, annualPriceCents, storeCommissionBps, marketplaceCommissionBps, featuresJson: features, entitlementsJson: entitlements, displayOrder: Number(req.body.displayOrder || 0), effectiveAt: req.body.effectiveAt ? new Date(req.body.effectiveAt) : new Date(), grandfatherExisting: req.body.grandfatherExisting !== false, isActive: req.body.isActive !== false },
+      create: { code, name, monthlyPriceCents, annualPriceCents, storeCommissionBps, marketplaceCommissionBps, featuresJson: features, entitlementsJson: entitlements, displayOrder: Number(req.body.displayOrder || 0), effectiveAt: req.body.effectiveAt ? new Date(req.body.effectiveAt) : new Date(), grandfatherExisting: req.body.grandfatherExisting !== false, isActive: req.body.isActive !== false }
     });
     await tx.auditEvent.create({ data: { actorUserId: req.user.userId, action: 'SUBSCRIPTION_PLAN_CHANGED', entityType: 'SUBSCRIPTION_PLAN', entityId: updated.id, beforeJson: jsonValue(before), afterJson: jsonValue(updated), reason } });
     return updated;
@@ -130,14 +144,16 @@ router.put('/admin/policies/:scopeKey', requireAuth, requirePlatformRole, async 
 });
 
 router.get('/admin/summary', requireAuth, requirePlatformRole, async (_req, res) => {
-  const [byKind, platformCredits, platformDebits, pendingPayouts, subscriptions] = await Promise.all([
+  const [byKind, platformCredits, platformDebits, pendingPayouts, subscriptions, recentTransactions, withdrawalRows] = await Promise.all([
     prisma.financialTransaction.groupBy({ by: ['kind', 'status'], _sum: { grossCents: true, platformCommissionCents: true, tenantProceedsCents: true, providerProceedsCents: true, brokerMarginCents: true } }),
     prisma.ledgerEntry.aggregate({ where: { account: 'PLATFORM', direction: 'CREDIT' }, _sum: { amountCents: true } }),
     prisma.ledgerEntry.aggregate({ where: { account: 'PLATFORM', direction: 'DEBIT' }, _sum: { amountCents: true } }),
     prisma.withdrawalRequest.aggregate({ where: { status: { in: ['pending', 'approved'] } }, _sum: { amountCents: true }, _count: true }),
-    prisma.subscription.groupBy({ by: ['planCode', 'status'], _count: true, _sum: { monthlyPriceCents: true } })
+    prisma.subscription.groupBy({ by: ['planCode', 'status'], _count: true, _sum: { monthlyPriceCents: true } }),
+    prisma.financialTransaction.findMany({ include: { tenant: { select: { id: true, name: true, slug: true } } }, orderBy: { createdAt: 'desc' }, take: 100 }),
+    prisma.withdrawalRequest.findMany({ include: { tenant: { select: { id: true, name: true, slug: true } } }, orderBy: { createdAt: 'desc' }, take: 100 })
   ]);
-  return res.json({ platformRevenueCents: (platformCredits._sum.amountCents || 0) - (platformDebits._sum.amountCents || 0), pendingPayouts, byKind, subscriptions });
+  return res.json({ platformRevenueCents: (platformCredits._sum.amountCents || 0) - (platformDebits._sum.amountCents || 0), pendingPayouts, byKind, subscriptions, recentTransactions, withdrawals: withdrawalRows });
 });
 
 router.post('/admin/marketplace-settlements', requireAuth, requirePlatformRole, async (req, res) => {

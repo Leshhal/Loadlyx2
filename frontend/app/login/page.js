@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { Suspense, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { authRequest, storeSession } from '../../lib/auth';
+import { authRequest, safePostLoginPath, storeSession } from '../../lib/auth';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api';
 const providerNames = { google: 'Google', apple: 'Apple', discord: 'Discord' };
@@ -30,13 +30,7 @@ function LoginInner() {
     try {
       const data = await authRequest('/auth/login', { email, password });
       storeSession(data);
-      const platformRoles = ['SUPER_ADMIN', 'PLATFORM_ADMIN', 'ADMIN', 'SUPPORT'];
-      const defaultPath = platformRoles.includes(data.user?.role)
-        ? '/admin/platform'
-        : data.user?.role === 'TENANT_ADMIN'
-          ? '/admin/dashboard'
-          : '/app/dashboard';
-      window.location.assign(searchParams.get('next') || defaultPath);
+      window.location.assign(safePostLoginPath(searchParams.get('next'), data.user));
     } catch (err) {
       setError(err.message || 'Login failed');
     } finally {

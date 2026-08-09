@@ -23,13 +23,10 @@ import { validateTenantSlug } from '../lib/tenantSlug.js';
 import { clearRefreshCookie, readCookie, setRefreshCookie } from '../lib/authCookies.js';
 import { SUBSCRIPTION_PLANS } from '../config/plans.js';
 import { publishEvent } from '../services/eventBus.js';
+import { authorizationUrl, exchangeOAuthCode, oauthConfig, oauthReadiness } from '../services/oauthService.js';
 
 const router = Router();
-const OAUTH_PROVIDERS = {
-  google: { clientId: process.env.GOOGLE_CLIENT_ID, redirectUri: process.env.GOOGLE_REDIRECT_URI },
-  apple: { clientId: process.env.APPLE_CLIENT_ID, redirectUri: process.env.APPLE_REDIRECT_URI },
-  discord: { clientId: process.env.DISCORD_CLIENT_ID, redirectUri: process.env.DISCORD_REDIRECT_URI }
-};
+const OAUTH_PROVIDER_KEYS = ['google', 'apple', 'discord'];
 
 function assertJwtSecret() {
   if (!env.jwtSecret) throw new Error('JWT_SECRET is missing from environment variables');
@@ -104,7 +101,7 @@ async function handleSignup(req, res) {
           include: { tenant: true }
         });
         await Promise.all([
-          tx.commissionPolicy.create({ data: { scopeKey: `TENANT:${tenant.id}`, tenantId: tenant.id } }),
+          tx.commissionPolicy.create({ data: { scopeKey: `TENANT:${tenant.id}`, tenantId: tenant.id, storeCommissionBps: SUBSCRIPTION_PLANS.STARTER.commissionBps, marketplaceCommissionBps: SUBSCRIPTION_PLANS.STARTER.commissionBps } }),
           tx.subscription.create({ data: { tenantId: tenant.id, planCode: 'STARTER', status: 'TRIALING', monthlyPriceCents: SUBSCRIPTION_PLANS.STARTER.monthlyPriceCents, currentPeriodStart: new Date(), currentPeriodEnd: new Date(Date.now() + 14 * 86400000) } }),
           tx.aiTenantConfig.create({ data: { tenantId: tenant.id, enabled: false, monthlyRequestLimit: 100, allowedModules: [] } }),
           tx.simulationConfig.create({ data: { scopeKey: `TENANT:${tenant.id}`, tenantId: tenant.id, enabled: false, businessHours: {} } }),
@@ -260,23 +257,55 @@ router.post('/verify-email', async (req, res) => {
 });
 
 router.get('/oauth/providers', (_req, res) => {
-  const providers = Object.entries(OAUTH_PROVIDERS).map(([key, config]) => ({
-    key,
-    configured: Boolean(config.clientId && config.redirectUri),
-    available: false,
-    reason: config.clientId && config.redirectUri
-      ? 'Provider callback implementation is pending'
-      : 'Provider credentials are not configured'
-  }));
+  const providers = OAUTH_PROVIDER_KEYS.map((key) => { const readiness = oauthReadiness(key); return { key, configured: readiness.configured, available: readiness.configured, reason: readiness.configured ? null : `Missing ${readiness.missing.join(', ')}` }; });
   return res.json({ providers });
 });
 
-router.get('/oauth/:provider/start', (req, res) => {
+router.get('/oauth/:provider/start', async (req, res, next) => {
+  try {
   const provider = String(req.params.provider || '').toLowerCase();
-  const config = OAUTH_PROVIDERS[provider];
+  const config = oauthConfig(provider);
   if (!config) return res.status(404).json({ error: 'OAuth provider not supported' });
-  if (!config.clientId || !config.redirectUri) return res.status(501).json({ error: `${provider} login is not configured` });
-  return res.status(501).json({ error: `${provider} login requires the provider callback implementation before it can be enabled` });
+  const readiness = oauthReadiness(provider);
+  if (!readiness.configured) return res.status(503).json({ error: `${provider} login is not configured`, missing: readiness.missing });
+  const state = createRawToken(32);
+  await prisma.oauthState.create({ data: { tokenHash: hashToken(state), provider, expiresAt: minutesFromNow(10) } });
+  return res.redirect(authorizationUrl(config, state));
+  } catch (error) { return next(error); }
 });
+
+async function oauthCallback(req, res) {
+  const provider = String(req.params.provider || '').toLowerCase();
+  const config = oauthConfig(provider);
+  const code = String(req.body?.code || req.query?.code || '');
+  const state = String(req.body?.state || req.query?.state || '');
+  const frontend = String(env.frontendUrl || 'http://localhost:3000').replace(/\/$/, '');
+  try {
+    if (!config || !code || !state) throw new Error('OAuth callback is incomplete');
+    const storedState = await prisma.oauthState.findUnique({ where: { tokenHash: hashToken(state) } });
+    if (!storedState || storedState.provider !== provider || storedState.consumedAt || storedState.expiresAt < new Date()) throw new Error('OAuth state is invalid or expired');
+    await prisma.oauthState.update({ where: { id: storedState.id }, data: { consumedAt: new Date() } });
+    const profile = await exchangeOAuthCode(config, code);
+    let account = await prisma.oauthAccount.findUnique({ where: { provider_providerAccountId: { provider, providerAccountId: profile.providerAccountId } }, include: { user: { include: { tenant: true } } } });
+    let user = account?.user || null;
+    if (!user && profile.email) user = await prisma.user.findUnique({ where: { email: normalizeEmail(profile.email) }, include: { tenant: true } });
+    if (!user) {
+      if (!profile.email || !profile.emailVerified) throw new Error('The provider must return a verified email address');
+      user = await prisma.user.create({ data: { email: normalizeEmail(profile.email), fullName: profile.name || 'Marketplace user', role: 'MARKETPLACE_USER', emailVerifiedAt: new Date() }, include: { tenant: true } });
+    }
+    if (!account) await prisma.oauthAccount.create({ data: { userId: user.id, provider, providerAccountId: profile.providerAccountId } });
+    if (!user.emailVerifiedAt && profile.emailVerified) user = await prisma.user.update({ where: { id: user.id }, data: { emailVerifiedAt: new Date() }, include: { tenant: true } });
+    const refreshToken = await createRefreshToken(user.id);
+    setRefreshCookie(res, refreshToken);
+    await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
+    return res.redirect(`${frontend}/oauth/callback`);
+  } catch (error) {
+    console.error('OAuth callback error:', error);
+    return res.redirect(`${frontend}/login?oauth_error=${encodeURIComponent(error.message || 'OAuth sign-in failed')}`);
+  }
+}
+
+router.get('/oauth/:provider/callback', oauthCallback);
+router.post('/oauth/:provider/callback', oauthCallback);
 
 export default router;

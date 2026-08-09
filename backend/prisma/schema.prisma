@@ -165,6 +165,7 @@ model Tenant {
   aiUsage               AiUsageEvent[]
   cryptoSettings        CryptoPaymentSettings?
   cryptoInvoices        CryptoInvoice[]
+  withdrawalRequests    WithdrawalRequest[]
   aiAgents              AiAgentDefinition[]
   aiRecommendations     AiRecommendation[]
   approvalRequests      ApprovalRequest[]
@@ -368,6 +369,17 @@ model OAuthAccount {
 
   @@unique([provider, providerAccountId])
   @@index([userId])
+}
+
+model OAuthState {
+  id         String    @id @default(cuid())
+  tokenHash  String    @unique
+  provider   String
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([expiresAt])
 }
 
 model Category {
@@ -840,20 +852,22 @@ model Subscription {
 }
 
 model SubscriptionPlan {
-  id                  String               @id @default(cuid())
-  code                SubscriptionPlanCode @unique
-  name                String
-  monthlyPriceCents   Int
-  annualPriceCents    Int?
-  currency            String               @default("cad")
-  featuresJson        Json
-  entitlementsJson    Json?
-  displayOrder        Int                  @default(0)
-  effectiveAt         DateTime             @default(now())
-  grandfatherExisting Boolean              @default(true)
-  isActive            Boolean              @default(true)
-  createdAt           DateTime             @default(now())
-  updatedAt           DateTime             @updatedAt
+  id                       String               @id @default(cuid())
+  code                     SubscriptionPlanCode @unique
+  name                     String
+  monthlyPriceCents        Int
+  annualPriceCents         Int?
+  storeCommissionBps       Int                  @default(650)
+  marketplaceCommissionBps Int                  @default(650)
+  currency                 String               @default("cad")
+  featuresJson             Json
+  entitlementsJson         Json?
+  displayOrder             Int                  @default(0)
+  effectiveAt              DateTime             @default(now())
+  grandfatherExisting      Boolean              @default(true)
+  isActive                 Boolean              @default(true)
+  createdAt                DateTime             @default(now())
+  updatedAt                DateTime             @updatedAt
 }
 
 model FinancialTransaction {
@@ -1127,6 +1141,7 @@ model WithdrawalRequest {
   id                String    @id @default(cuid())
   idempotencyKey    String?   @unique
   tenantId          String
+  tenant            Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   requestedByUserId String?
   amountCents       Int
   currency          String    @default("cad")

@@ -1,6 +1,7 @@
 import { resolveTenant } from '../lib/tenant.js';
 import { Router } from 'express';
 import Stripe from 'stripe';
+import { getCommissionPolicy } from '../services/ledgerService.js';
 import { env } from '../config/env.js';
 import { prisma } from '../db/prisma.js';
 import { z } from 'zod';
@@ -9,6 +10,20 @@ import { recordRefund } from '../services/ledgerService.js';
 
 const router = Router();
 const stripe = env.stripeSecretKey ? new Stripe(env.stripeSecretKey) : null;
+
+router.get('/payment-methods', async (req, res) => {
+  if (!req.tenant?.id) return res.status(404).json({ error: 'Tenant storefront not found' });
+  const [tenant, cryptoSettings] = await Promise.all([
+    prisma.tenant.findUnique({ where: { id: req.tenant.id }, select: { brandingJson: true } }),
+    prisma.cryptoPaymentSettings.findUnique({ where: { tenantId: req.tenant.id } })
+  ]);
+  const settings = tenant?.brandingJson?.paymentSettings || {};
+  return res.json({
+    card: { status: !stripe ? 'DISABLED' : env.stripeSecretKey.startsWith('sk_live_') ? 'LIVE' : 'SANDBOX', provider: 'STRIPE', tenantConnected: Boolean(settings.stripeAccountId) },
+    paypal: { status: process.env.PAYPAL_CLIENT_ID && process.env.PAYPAL_CLIENT_SECRET && settings.paypalMerchantId ? 'EXTERNAL_VERIFICATION_REQUIRED' : 'DISABLED', provider: 'PAYPAL' },
+    crypto: { status: cryptoSettings?.enabled ? (cryptoSettings.provider === 'MOCK' ? 'MOCK' : 'EXTERNAL_VERIFICATION_REQUIRED') : 'DISABLED', provider: cryptoSettings?.provider || 'MOCK', acceptedAssets: cryptoSettings?.acceptedAssets || [] }
+  });
+});
 const PLATFORM_ROLES = new Set(['SUPER_ADMIN', 'PLATFORM_ADMIN', 'ADMIN', 'SUPPORT']);
 
 function checkoutOrigin(req) {
@@ -278,6 +293,10 @@ router.post('/checkout', async (req, res, next) => {
     });
   }
 
+  const tenantRecord = await prisma.tenant.findUnique({ where: { id: req.tenant.id }, select: { brandingJson: true } });
+  const paymentSettings = tenantRecord?.brandingJson?.paymentSettings || {};
+  const commissionPolicy = await getCommissionPolicy(prisma, req.tenant.id);
+  const applicationFeeCents = Math.round((subtotalCents * commissionPolicy.storeCommissionBps) / 10000);
   const session = await stripe.checkout.sessions.create({
     mode: 'payment',
     success_url: `${checkoutOrigin(req)}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
@@ -310,8 +329,11 @@ router.post('/checkout', async (req, res, next) => {
     ],
     metadata: {
       tenantId: req.tenant.id,
-      orderId: order.id
-    }
+      orderId: order.id,
+      commissionBps: String(commissionPolicy.storeCommissionBps),
+      applicationFeeCents: String(applicationFeeCents)
+    },
+    ...(paymentSettings.stripeAccountId ? { payment_intent_data: { application_fee_amount: applicationFeeCents, transfer_data: { destination: paymentSettings.stripeAccountId }, metadata: { tenantId: req.tenant.id, orderId: order.id, commissionBps: String(commissionPolicy.storeCommissionBps) } } } : {})
   });
 
   await prisma.order.update({

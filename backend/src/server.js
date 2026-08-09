@@ -89,6 +89,7 @@ const authLimiter = rateLimit({
 app.use('/api/stripe', stripeRoutes);
 
 app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || '12mb' }));
+app.use(express.urlencoded({ extended: false, limit: '128kb' }));
 app.use(tenantMiddleware);
 app.use('/api/customers', requireAuth, adminCustomerRoutes);
 app.use('/api/balance', requireAuth, adminBalanceRoutes);
@@ -118,7 +119,8 @@ app.use('/api/loads', loadRoutes);
 app.use('/api/orders', (req, res, next) => {
   const publicStoreCheckout = req.method === 'POST' && req.path === '/checkout';
   const publicCheckoutConfirmation = req.method === 'GET' && req.path.startsWith('/checkout-session/');
-  return publicStoreCheckout || publicCheckoutConfirmation ? next() : requireAuth(req, res, next);
+  const publicPaymentMethods = req.method === 'GET' && req.path === '/payment-methods';
+  return publicStoreCheckout || publicCheckoutConfirmation || publicPaymentMethods ? next() : requireAuth(req, res, next);
 }, orderRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/carriers', carrierRoutes);

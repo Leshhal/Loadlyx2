@@ -43,6 +43,15 @@ if (marketplaceTransactionId) {
 }
 
 if (orderId) {
+let processorFeeCents = 0;
+if (session.payment_intent) {
+  try {
+    const paymentIntent = await stripe.paymentIntents.retrieve(String(session.payment_intent), { expand: ['latest_charge.balance_transaction'] });
+    processorFeeCents = Number(paymentIntent.latest_charge?.balance_transaction?.fee || 0);
+  } catch (feeError) {
+    console.warn('Stripe processor fee unavailable during settlement:', feeError.message);
+  }
+}
 await prisma.$transaction(async (tx) => {
   const order = await tx.order.update({
     where: { id: orderId },
@@ -56,7 +65,8 @@ await prisma.$transaction(async (tx) => {
   const settlement = await recordStoreSettlement(tx, order, {
     taxCents: session.total_details?.amount_tax || 0,
     discountCents: session.total_details?.amount_discount || 0,
-    processorFeeCents: 0
+    processorFeeCents,
+    commissionBps: Number(session.metadata?.commissionBps)
   });
   await tx.tenantLedger.upsert({
     where: { orderId },

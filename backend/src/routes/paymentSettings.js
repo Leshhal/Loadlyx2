@@ -25,9 +25,16 @@ function publicSettings(brandingJson = {}) {
 }
 
 router.get('/', async (req, res) => {
+  if (!req.user?.tenantId && ['SUPER_ADMIN', 'PLATFORM_ADMIN', 'ADMIN', 'SUPPORT'].includes(req.user?.role)) {
+    return res.json({ scope: 'PLATFORM', providers: {
+      stripe: { status: !stripe ? 'DISABLED' : env.stripeSecretKey.startsWith('sk_live_') ? 'LIVE' : 'SANDBOX', connectMode: 'EXPRESS', webhookConfigured: Boolean(env.stripeWebhookSecret) },
+      paypal: { status: process.env.PAYPAL_CLIENT_ID && process.env.PAYPAL_CLIENT_SECRET ? (process.env.PAYPAL_MODE === 'LIVE' ? 'LIVE_EXTERNAL_VERIFICATION_REQUIRED' : 'SANDBOX_EXTERNAL_VERIFICATION_REQUIRED') : 'DISABLED', mode: 'MULTIPARTY' },
+      crypto: { status: process.env.CRYPTO_PROVIDER && process.env.CRYPTO_PROVIDER !== 'MOCK' ? 'SANDBOX_OR_LIVE_EXTERNAL_VERIFICATION_REQUIRED' : 'MOCK', provider: process.env.CRYPTO_PROVIDER || 'MOCK' }
+    } });
+  }
   const tenantId = tenantRequired(req, res); if (!tenantId) return;
   const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { brandingJson: true } });
-  return res.json({ settings: publicSettings(tenant?.brandingJson), stripeAvailable: Boolean(stripe), paypalMode: 'merchant-id' });
+  return res.json({ scope: 'TENANT', settings: publicSettings(tenant?.brandingJson), stripeAvailable: Boolean(stripe), paypalMode: process.env.PAYPAL_CLIENT_ID && process.env.PAYPAL_CLIENT_SECRET ? 'multiparty-ready' : 'merchant-id-only' });
 });
 
 router.put('/', async (req, res) => {

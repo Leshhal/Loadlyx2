@@ -33,6 +33,25 @@ router.get('/users', async (req, res, next) => {
   } catch (error) { return next(error); }
 });
 
+router.get('/marketplace-providers', async (_req, res, next) => {
+  try {
+    const users = await prisma.user.findMany({
+      where: { role: { in: ['BROKER', 'CARRIER'] } },
+      include: { tenant: { select: { id: true, name: true, slug: true, carrierProfiles: true } } },
+      orderBy: { createdAt: 'desc' }, take: 1000
+    });
+    const userIds = users.map((user) => user.id);
+    const [reviews, trustScores] = await Promise.all([
+      prisma.review.groupBy({ where: { revieweeUserId: { in: userIds }, moderationStatus: 'PUBLISHED' }, by: ['revieweeUserId'], _avg: { rating: true }, _count: { rating: true } }),
+      prisma.marketplaceTrustScore.findMany({ where: { userId: { in: userIds } }, orderBy: [{ userId: 'asc' }, { version: 'desc' }] })
+    ]);
+    const reviewMap = new Map(reviews.map((row) => [row.revieweeUserId, { rating: row._avg.rating || 0, reviewCount: row._count.rating }]));
+    const trustMap = new Map();
+    trustScores.forEach((row) => { if (!trustMap.has(row.userId)) trustMap.set(row.userId, row); });
+    return res.json(users.map(({ passwordHash, ...user }) => ({ ...user, ...reviewMap.get(user.id), trust: trustMap.get(user.id) || null, carrierProfile: user.tenant?.carrierProfiles?.[0] || null })));
+  } catch (error) { return next(error); }
+});
+
 router.put('/users/:id', requireWrite, async (req, res, next) => {
   try {
     const input = z.object({ isActive: z.boolean().optional(), role: z.enum(['SUPER_ADMIN', 'PLATFORM_ADMIN', 'ADMIN', 'SUPPORT', 'TENANT_ADMIN', 'TENANT_STAFF', 'MARKETPLACE_USER', 'BROKER', 'CARRIER', 'STAFF']).optional(), reason: z.string().min(3).max(500) }).parse(req.body);
@@ -84,7 +103,7 @@ router.put('/tenants/:id/status', requireWrite, async (req, res, next) => {
 router.get('/feature-flags', async (_req, res, next) => { try { return res.json(await prisma.featureFlag.findMany({ orderBy: { key: 'asc' } })); } catch (error) { return next(error); } });
 router.put('/feature-flags/:key', requireWrite, async (req, res, next) => {
   try {
-    const input = z.object({ enabled: z.boolean(), tenantIds: z.array(z.string()).max(500).optional(), reason: z.string().min(3).max(500) }).parse(req.body);
+    const input = z.object({ enabled: z.boolean(), tenantIds: z.array(z.string()).max(500).optional(), reason: z.string().min(3).max(500), confirmed: z.literal(true) }).parse(req.body);
     const before = await prisma.featureFlag.findUnique({ where: { key: req.params.key } });
     if (!before) return res.status(404).json({ error: 'Feature flag not found' });
     const updated = await prisma.$transaction(async (tx) => {

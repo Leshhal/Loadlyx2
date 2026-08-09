@@ -2,6 +2,24 @@
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api';
 
+export function postLoginPath(user) {
+  const role = user?.role;
+  if (['SUPER_ADMIN', 'PLATFORM_ADMIN', 'ADMIN', 'SUPPORT'].includes(role)) return '/admin/platform';
+  if (role === 'TENANT_ADMIN') return '/admin/dashboard';
+  if (role === 'BROKER') return '/app/dashboard';
+  if (role === 'CARRIER') return '/app/dashboard';
+  if (role === 'MARKETPLACE_USER') return '/app/dashboard';
+  return '/app/dashboard';
+}
+
+export function safePostLoginPath(requestedPath, user) {
+  if (!requestedPath || !requestedPath.startsWith('/') || requestedPath.startsWith('//')) return postLoginPath(user);
+  const role = user?.role;
+  const platformRole = ['SUPER_ADMIN', 'PLATFORM_ADMIN', 'ADMIN', 'SUPPORT'].includes(role);
+  if (requestedPath.startsWith('/admin') && !platformRole && role !== 'TENANT_ADMIN') return postLoginPath(user);
+  return requestedPath;
+}
+
 export function getStoredSession() {
   if (typeof window === 'undefined') return {};
   return {

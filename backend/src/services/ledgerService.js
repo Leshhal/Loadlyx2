@@ -1,4 +1,5 @@
 import { calculateMarketplaceAllocation, calculateStoreAllocation } from './moneyFlow.js';
+import { getSubscriptionPlan } from '../config/plans.js';
 
 export async function getCommissionPolicy(db, tenantId) {
   const tenantPolicy = tenantId
@@ -6,7 +7,13 @@ export async function getCommissionPolicy(db, tenantId) {
     : null;
   if (tenantPolicy) return tenantPolicy;
   const globalPolicy = await db.commissionPolicy.findUnique({ where: { scopeKey: 'GLOBAL' } });
-  return globalPolicy || { storeCommissionBps: 800, marketplaceCommissionBps: 700, minimumMarketplaceFeeCents: 0 };
+  if (globalPolicy) return globalPolicy;
+  if (tenantId) {
+    const tenant = await db.tenant.findUnique({ where: { id: tenantId }, select: { subscriptionPlan: true, subscription: { select: { planCode: true } } } });
+    const plan = getSubscriptionPlan(tenant?.subscription?.planCode || tenant?.subscriptionPlan || 'STARTER');
+    if (plan) return { storeCommissionBps: plan.commissionBps, marketplaceCommissionBps: plan.commissionBps, minimumMarketplaceFeeCents: 0, source: `PLAN:${plan.code}` };
+  }
+  return { storeCommissionBps: 650, marketplaceCommissionBps: 650, minimumMarketplaceFeeCents: 0, source: 'STARTER_FALLBACK' };
 }
 
 function entry(transactionId, suffix, data) {
@@ -19,13 +26,14 @@ export async function recordStoreSettlement(db, order, options = {}) {
   if (existing) return existing;
 
   const policy = await getCommissionPolicy(db, order.tenantId);
+  const commissionBps = Number.isInteger(options.commissionBps) ? options.commissionBps : policy.storeCommissionBps;
   const allocation = calculateStoreAllocation({
     subtotalCents: order.subtotalCents,
     shippingCents: order.shippingCents,
     taxCents: options.taxCents || 0,
     discountCents: options.discountCents || 0,
     processorFeeCents: options.processorFeeCents || 0,
-    commissionBps: policy.storeCommissionBps
+    commissionBps
   });
   const { commissionBps: _commissionBps, shippingCents: _shippingCents, subtotalCents: _subtotalCents, ...storedAllocation } = allocation;
 
@@ -40,7 +48,7 @@ export async function recordStoreSettlement(db, order, options = {}) {
       currency: order.currency,
       ...storedAllocation,
       availableAt: new Date(),
-      metadataJson: { commissionPolicyId: policy.id || null, stripePaymentIntentId: order.stripePaymentIntentId || null }
+      metadataJson: { commissionPolicyId: policy.id || null, commissionBps, stripePaymentIntentId: order.stripePaymentIntentId || null }
     }
   });
 
@@ -81,7 +89,7 @@ export async function recordMarketplaceSettlement(db, deal) {
   const transaction = await db.financialTransaction.create({ data: {
     idempotencyKey, tenantId: deal.tenantId || null, kind: 'MARKETPLACE_DEAL', status: 'AVAILABLE',
     referenceType: 'MARKETPLACE_DEAL', referenceId: deal.id, currency, ...storedAllocation, availableAt: new Date(),
-    metadataJson: { brokerUserId: deal.brokerUserId || null, carrierUserId: deal.carrierUserId || null, commissionPolicyId: policy.id || null }
+    metadataJson: { brokerUserId: deal.brokerUserId || null, carrierUserId: deal.carrierUserId || null, commissionPolicyId: policy.id || null, commissionBps: policy.marketplaceCommissionBps }
   } });
   await db.ledgerEntry.createMany({ data: [
     entry(transaction.id, 'customer-debit', { account: 'CUSTOMER', entryType: 'CARRIER_PROCEEDS', direction: 'DEBIT', amountCents: allocation.grossCents, currency }),

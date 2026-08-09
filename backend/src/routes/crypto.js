@@ -6,6 +6,7 @@ import { prisma } from '../db/prisma.js';
 import { requireAuth, requirePlatformRole } from '../middleware/requireauth.js';
 import { createCryptoProvider, nextCryptoStatus, SUPPORTED_ASSETS, verifyCryptoWebhook } from '../services/cryptoService.js';
 import { recordStoreSettlement } from '../services/ledgerService.js';
+import { requireFeature } from '../services/featureFlagService.js';
 
 const router = Router();
 const checkoutSchema = z.object({ productSlug: z.string().min(1), quantity: z.number().int().min(1).max(100), asset: z.enum(['BTC','ETH','SOL','ADA','USDC','USDT']), name: z.string().min(1).max(200), email: z.string().email(), country: z.string().max(2).default('CA'), province: z.string().max(100).optional(), address: z.string().max(300).optional(), city: z.string().max(120).optional(), postalCode: z.string().max(30).optional() });
@@ -15,6 +16,7 @@ router.post('/invoices', async (req, res, next) => {
     const input = checkoutSchema.parse(req.body);
     const tenantSlug = String(req.headers['x-tenant-slug'] || '').toLowerCase();
     const tenant = await prisma.tenant.findFirst({ where: { OR: [{ slug: tenantSlug }, { subdomain: tenantSlug }], isActive: true }, include: { cryptoSettings: true } });
+    if (tenant) await requireFeature(prisma, 'crypto-checkout', tenant.id);
     if (!tenant?.cryptoSettings?.enabled) return res.status(503).json({ error: 'Crypto checkout is not enabled for this store' });
     const accepted = tenant.cryptoSettings.acceptedAssets || [];
     if (!accepted.includes(input.asset)) return res.status(400).json({ error: 'Asset is not accepted by this store' });
@@ -59,6 +61,7 @@ router.put('/settings', requireAuth, async (req, res, next) => {
   try {
     if (!req.user.tenantId || !['TENANT_ADMIN','SUPER_ADMIN','PLATFORM_ADMIN','ADMIN'].includes(req.user.role)) return res.status(403).json({ error: 'Tenant Admin required' });
     const input = z.object({ enabled: z.boolean(), provider: z.enum(['MOCK']), acceptedAssets: z.array(z.enum(['BTC','ETH','SOL','ADA','USDC','USDT'])).min(1), requiredConfirmations: z.number().int().min(1).max(100), invoiceExpiryMinutes: z.number().int().min(5).max(1440) }).parse(req.body);
+    if (input.enabled) await requireFeature(prisma, 'crypto-checkout', req.user.tenantId);
     return res.json(await prisma.cryptoPaymentSettings.upsert({ where: { tenantId: req.user.tenantId }, update: input, create: { tenantId: req.user.tenantId, ...input } }));
   } catch (error) { return next(error); }
 });

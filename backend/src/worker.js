@@ -5,11 +5,13 @@ import { prisma } from './db/prisma.js';
 import { claimJob, completeJob, failJob } from './services/durableQueue.js';
 import { deliverNotification } from './services/notificationService.js';
 import { runWorkflow } from './services/workflowRunner.js';
+import { runScheduledSimulation } from './services/simulationService.js';
 
 const workerId = `${process.pid}:${crypto.randomUUID()}`;
 const queues = (process.env.WORKER_QUEUES || 'workflows,notifications,default').split(',').map((value) => value.trim()).filter(Boolean);
 const pollMs = Math.max(250, Number(process.env.WORKER_POLL_MS || 1000));
 let stopping = false;
+let lastSimulationSweep = 0;
 
 async function execute(job) {
   if (job.jobType === 'WORKFLOW_RUN') return runWorkflow(job.payloadJson.workflowRunId);
@@ -29,6 +31,10 @@ async function execute(job) {
 }
 
 async function tick() {
+  if (Date.now() - lastSimulationSweep >= 60_000) {
+    lastSimulationSweep = Date.now();
+    await runScheduledSimulation(prisma);
+  }
   for (const queue of queues) {
     const job = await claimJob(workerId, queue);
     if (!job) continue;

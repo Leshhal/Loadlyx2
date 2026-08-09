@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { Suspense, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { authRequest, storeSession } from '@/lib/auth';
+import { authRequest, safePostLoginPath, storeSession } from '@/lib/auth';
 
 function FreightLoginForm() {
   const searchParams = useSearchParams();
@@ -19,14 +19,7 @@ function FreightLoginForm() {
     try {
       const data = await authRequest('/auth/login', { email, password });
       storeSession(data);
-      const requested = searchParams.get('next');
-      const platformRoles = ['SUPER_ADMIN', 'PLATFORM_ADMIN', 'ADMIN', 'SUPPORT'];
-      const destination = requested || (platformRoles.includes(data.user?.role)
-        ? '/admin/platform'
-        : data.user?.role === 'TENANT_ADMIN'
-          ? '/admin/dashboard'
-          : '/app/dashboard');
-      window.location.assign(destination);
+      window.location.assign(safePostLoginPath(searchParams.get('next'), data.user));
     } catch (loginError) { setError(loginError.message || 'Unable to sign in'); }
     finally { setLoading(false); }
   }

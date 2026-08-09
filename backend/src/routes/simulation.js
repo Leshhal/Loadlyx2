@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { prisma } from '../db/prisma.js';
 import { requireAuth, requirePlatformRole } from '../middleware/requireauth.js';
 import { buildSimulationEvents, summarizeSimulation } from '../services/simulationService.js';
+import { requireFeature } from '../services/featureFlagService.js';
 
 const router = Router();
 router.use(requireAuth, requirePlatformRole);
@@ -31,6 +32,7 @@ router.post('/run/:scopeKey', async (req, res, next) => {
     if (!['SUPER_ADMIN', 'PLATFORM_ADMIN', 'ADMIN'].includes(req.user.role)) return res.status(403).json({ error: 'Support access is read-only' });
     const config = await prisma.simulationConfig.findUnique({ where: { scopeKey: req.params.scopeKey } });
     if (!config?.enabled) return res.status(409).json({ error: 'Simulation is disabled for this scope' });
+    await requireFeature(prisma, 'demo-simulation', config.tenantId);
     const events = buildSimulationEvents({ intensity: config.intensity, tenantId: config.tenantId, region: config.region || 'North America' });
     await prisma.simulationEvent.createMany({ data: events });
     return res.status(201).json({ runId: events[0].runId, watermark: config.watermark, ...summarizeSimulation(events), realCharges: 0, realPayouts: 0, notificationsSent: 0 });

@@ -121,7 +121,9 @@ export default function Header() {
     routeMode === 'loadboard' ? '/loadboard' : '/';
 
   const loadboardAuthPath = pathname.startsWith('/loadboard/login') || pathname.startsWith('/loadboard/signup') || (loadboardHost && ['/login', '/signup'].includes(pathname));
-  if (routeMode === 'admin' || routeMode === 'app' || loadboardAuthPath) return null;
+  // Tenant storefront pages render tenant-owned navigation. Rendering the
+  // platform header here creates a duplicate header and leaks SaaS branding.
+  if (routeMode === 'admin' || routeMode === 'app' || routeMode === 'tenant' || loadboardAuthPath) return null;
 
   return (
     <header className="header">
