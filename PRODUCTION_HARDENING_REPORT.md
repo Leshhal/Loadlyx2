@@ -127,7 +127,8 @@ Marketplace flow:
 | Stripe Connect live payment/refund/payout | NOT EXTERNALLY VERIFIED - test/live connected account required |
 | PayPal multiparty settlement | BLOCKED - implementation and credentials required |
 | Crypto live chain payment/treasury/withdrawal | BLOCKED - live provider/listener/treasury not verified |
-| Vercel preview and deployed backend smoke | NOT YET EXECUTED |
+| Vercel preview build | PASS - GitHub/Vercel reported Deployment has completed |
+| Preview application smoke | BLOCKED - Vercel Authentication redirects all public requests to Login - Vercel |
 
 ## 5. Required environment and external configuration
 
@@ -156,7 +157,10 @@ After the feature branch preview is available, test:
 
 ## 7. Git and rollback
 
-- Required feature branch: `release/production-hardening-20260808`.
+- Published feature branch: `release/production-hardening-20260808`.
+- Initial implementation commit: `1d269215c6e40ffc351ce773ea056b2941b0cde9`.
+- Vercel deployment status: successful build.
+- Protected preview: `https://loadlyx2-git-release-productio-3f6472-leshaunh22-1682s-projects.vercel.app`.
 - Recommended commit: `Harden authentication, tenant commerce, money flow, simulation and platform admin`.
 - Do not merge to `main` until the preview build and smoke checklist pass.
 - Rollback by redeploying the previous production commit `da56638`; database rollback must use a reviewed compensating migration rather than deleting production data.
@@ -168,7 +172,7 @@ After the feature branch preview is available, test:
 3. Install OAuth credentials and run all three provider callbacks.
 4. Provision protected smoke-account passwords in the deployment environment and test each role.
 5. Run Stripe Connect end-to-end test-mode checkout, refund, fee, tenant proceeds, and payout.
-6. Obtain preview URLs and complete deployed frontend/backend smoke testing.
+6. Authenticate to or temporarily authorize the protected Vercel preview and complete deployed frontend/backend smoke testing.
 7. Merge to `main` only after the above checks pass.
 
 Final release classification: NOT READY - BLOCKED.
