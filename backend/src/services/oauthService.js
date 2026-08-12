@@ -33,7 +33,7 @@ export function requireVerifiedOAuthIdentity(profile) {
   return profile;
 }
 
-export function authorizationUrl(config, state) {
+export function authorizationUrl(config, state, nonce = null) {
   const url = new URL(config.authorizeUrl);
   url.searchParams.set('client_id', config.clientId);
   url.searchParams.set('redirect_uri', config.redirectUri);
@@ -41,11 +41,12 @@ export function authorizationUrl(config, state) {
   url.searchParams.set('scope', config.scope);
   url.searchParams.set('state', state);
   if (config.responseMode) url.searchParams.set('response_mode', config.responseMode);
+  if (nonce && ['apple','google'].includes(config.provider)) url.searchParams.set('nonce', nonce);
   if (config.provider === 'google') url.searchParams.set('prompt', 'select_account');
   return url.toString();
 }
 
-async function verifyAppleIdentityToken(token, clientId) {
+async function verifyAppleIdentityToken(token, clientId, expectedNonce = null) {
   const decoded = jwt.decode(token, { complete: true });
   if (!decoded?.header?.kid) throw new Error('Apple identity token has no key identifier');
   const response = await fetch('https://appleid.apple.com/auth/keys');
@@ -54,10 +55,12 @@ async function verifyAppleIdentityToken(token, clientId) {
   const jwk = jwks.keys?.find((key) => key.kid === decoded.header.kid);
   if (!jwk) throw new Error('Apple signing key not found');
   const publicKey = crypto.createPublicKey({ key: jwk, format: 'jwk' });
-  return jwt.verify(token, publicKey, { algorithms: ['RS256'], audience: clientId, issuer: 'https://appleid.apple.com' });
+  const identity = jwt.verify(token, publicKey, { algorithms: ['RS256'], audience: clientId, issuer: 'https://appleid.apple.com' });
+  if (expectedNonce && identity.nonce !== expectedNonce) throw new Error('Apple identity token nonce mismatch');
+  return identity;
 }
 
-export async function exchangeOAuthCode(config, code) {
+export async function exchangeOAuthCode(config, code, expectedNonce = null) {
   const body = new URLSearchParams({ grant_type: 'authorization_code', code, redirect_uri: config.redirectUri, client_id: config.clientId, client_secret: config.clientSecret });
   const tokenResponse = await fetch(config.tokenUrl, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' }, body });
   const tokenData = await tokenResponse.json().catch(() => ({}));
@@ -65,7 +68,7 @@ export async function exchangeOAuthCode(config, code) {
 
   if (config.provider === 'apple') {
     if (!tokenData.id_token) throw new Error('Apple did not return an identity token');
-    const identity = await verifyAppleIdentityToken(tokenData.id_token, config.clientId);
+    const identity = await verifyAppleIdentityToken(tokenData.id_token, config.clientId, expectedNonce);
     return { providerAccountId: String(identity.sub), email: identity.email ? String(identity.email).toLowerCase() : null, name: null, emailVerified: identity.email_verified === true || identity.email_verified === 'true' };
   }
 

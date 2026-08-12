@@ -1,12 +1,13 @@
 import { resolveTenant } from '../lib/tenant.js';
 import { Router } from 'express';
 import Stripe from 'stripe';
-import { getCommissionPolicy } from '../services/ledgerService.js';
+import { getCommissionPolicy, recordStoreSettlement } from '../services/ledgerService.js';
 import { env } from '../config/env.js';
 import { prisma } from '../db/prisma.js';
 import { z } from 'zod';
 import { calculateShipping } from '../utils/shipping.js';
 import { recordRefund } from '../services/ledgerService.js';
+import { capturePaypalOrder, createPaypalOrder, refundPaypalCapture } from '../services/paypalService.js';
 
 const router = Router();
 const stripe = env.stripeSecretKey ? new Stripe(env.stripeSecretKey) : null;
@@ -19,8 +20,8 @@ router.get('/payment-methods', async (req, res) => {
   ]);
   const settings = tenant?.brandingJson?.paymentSettings || {};
   return res.json({
-    card: { status: !stripe ? 'DISABLED' : env.stripeSecretKey.startsWith('sk_live_') ? 'LIVE' : 'SANDBOX', provider: 'STRIPE', tenantConnected: Boolean(settings.stripeAccountId) },
-    paypal: { status: process.env.PAYPAL_CLIENT_ID && process.env.PAYPAL_CLIENT_SECRET && settings.paypalMerchantId ? 'EXTERNAL_VERIFICATION_REQUIRED' : 'DISABLED', provider: 'PAYPAL' },
+    card: { status: !stripe ? 'CONFIGURATION REQUIRED' : env.stripeSecretKey.startsWith('sk_live_') ? 'CONFIGURED' : 'SANDBOX', provider: 'STRIPE', tenantConnected: Boolean(settings.stripeAccountId), liveVerified: false },
+    paypal: { status: process.env.PAYPAL_CLIENT_ID && process.env.PAYPAL_CLIENT_SECRET && settings.paypalMerchantId ? (process.env.PAYPAL_MODE === 'LIVE' ? 'CONFIGURED' : 'SANDBOX') : 'CONFIGURATION REQUIRED', provider: 'PAYPAL', liveVerified: false },
     crypto: { status: cryptoSettings?.enabled ? (cryptoSettings.provider === 'MOCK' ? 'MOCK' : 'EXTERNAL_VERIFICATION_REQUIRED') : 'DISABLED', provider: cryptoSettings?.provider || 'MOCK', acceptedAssets: cryptoSettings?.acceptedAssets || [] }
   });
 });
@@ -155,11 +156,13 @@ router.post('/:id/refund', async (req, res) => {
   if (!order) return res.status(404).json({ error: 'Order not found' });
   const remaining = order.totalCents - order.refundedCents;
   if (input.amountCents > remaining) return res.status(409).json({ error: 'Refund exceeds the remaining refundable amount', remainingCents: remaining });
-  if (!order.stripePaymentIntentId && !input.manual) return res.status(409).json({ error: 'This order has no processor payment. Confirm a manual refund instead.' });
+  if (!order.stripePaymentIntentId && !order.paypalCaptureId && !input.manual) return res.status(409).json({ error: 'This order has no processor payment. Confirm a manual refund instead.' });
   let providerRefund = null;
   if (order.stripePaymentIntentId) {
     if (!stripe) return res.status(503).json({ error: 'Stripe is not configured' });
     providerRefund = await stripe.refunds.create({ payment_intent: order.stripePaymentIntentId, amount: input.amountCents, reason: 'requested_by_customer', metadata: { orderId: order.id, note: input.reason } });
+  } else if (order.paypalCaptureId) {
+    providerRefund = await refundPaypalCapture(order.paypalCaptureId, input.amountCents, order.currency, `loadlyx-refund-${order.id}-${order.refundedCents}`);
   }
   const original = await prisma.financialTransaction.findFirst({ where: { referenceType: 'ORDER', referenceId: order.id, kind: 'STORE_SALE' }, include: { ledgerEntries: true } });
   const result = await prisma.$transaction(async (tx) => {
@@ -211,6 +214,7 @@ router.post('/checkout', async (req, res, next) => {
     shippingProvince: z.string().optional(),
     shippingState: z.string().optional(),
     items: z.array(z.object({ productId: z.string(), quantity: z.number().int().positive() })).min(1),
+    paymentMethod: z.enum(['STRIPE','PAYPAL']).default('STRIPE'),
     attribution: z.object({
       sessionId: z.string().optional(),
       referrer: z.string().optional(),
@@ -297,6 +301,13 @@ router.post('/checkout', async (req, res, next) => {
   const paymentSettings = tenantRecord?.brandingJson?.paymentSettings || {};
   const commissionPolicy = await getCommissionPolicy(prisma, req.tenant.id);
   const applicationFeeCents = Math.round((subtotalCents * commissionPolicy.storeCommissionBps) / 10000);
+  if (input.paymentMethod === 'PAYPAL') {
+    if (!paymentSettings.paypalMerchantId) return res.status(409).json({ error: 'PayPal is not connected for this tenant' });
+    const origin = checkoutOrigin(req);
+    const paypalOrder = await createPaypalOrder({ orderId: order.id, totalCents, currency: env.stripeCurrency, returnUrl: `${origin}/checkout/paypal?order_id=${order.id}`, cancelUrl: `${origin}/checkout/cancel`, payeeMerchantId: paymentSettings.paypalMerchantId });
+    await prisma.order.update({ where: { id: order.id }, data: { paypalOrderId: paypalOrder.id } });
+    return res.status(201).json({ orderId: order.id, checkoutUrl: paypalOrder.links?.find((link) => link.rel === 'approve')?.href || null, provider: 'PAYPAL', order });
+  }
   const session = await stripe.checkout.sessions.create({
     mode: 'payment',
     success_url: `${checkoutOrigin(req)}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
@@ -346,6 +357,29 @@ router.post('/checkout', async (req, res, next) => {
    if (error instanceof z.ZodError) return res.status(400).json({ error: 'Invalid checkout request', details: error.issues });
    next(error);
  }
+});
+
+router.post('/paypal/:orderId/capture', async (req, res, next) => {
+  try {
+    if (!req.tenant?.id) return res.status(404).json({ error: 'Tenant storefront not found' });
+    const order = await prisma.order.findFirst({ where: { id: req.params.orderId, tenantId: req.tenant.id } });
+    if (!order?.paypalOrderId) return res.status(404).json({ error: 'PayPal order not found' });
+    if (order.paymentStatus === 'PAID') return res.json({ order, duplicate: true });
+    const result = await capturePaypalOrder(order.paypalOrderId, order.id);
+    const capture = result.purchase_units?.flatMap((unit) => unit.payments?.captures || []).find((row) => row.status === 'COMPLETED');
+    if (!capture) return res.status(409).json({ error: 'PayPal capture is not complete' });
+    if (String(capture.custom_id || capture.invoice_id || order.id) !== order.id) return res.status(409).json({ error: 'PayPal capture does not match this order' });
+    const capturedCents = Math.round(Number(capture.amount?.value || 0) * 100);
+    if (capturedCents !== order.totalCents || String(capture.amount?.currency_code || '').toLowerCase() !== order.currency.toLowerCase()) return res.status(409).json({ error: 'PayPal capture amount or currency mismatch' });
+    const saved = await prisma.$transaction(async (tx) => {
+      const fresh = await tx.order.findUnique({ where: { id: order.id } });
+      if (fresh.paymentStatus === 'PAID') return fresh;
+      const updated = await tx.order.update({ where: { id: order.id }, data: { paypalCaptureId: capture.id, paymentStatus: 'PAID', status: 'PAID' } });
+      await recordStoreSettlement(tx, { tenantId: order.tenantId, orderId: order.id, grossCents: order.totalCents, taxCents: 0, processorFeeCents: 0, currency: order.currency, source: 'paypal:capture', idempotencyKey: `paypal-settlement:${capture.id}` });
+      return updated;
+    });
+    return res.json({ order: saved, provider: 'PAYPAL', captureId: capture.id });
+  } catch (error) { return next(error); }
 });
 
 export default router;

@@ -19,6 +19,7 @@ import authRoutes from './routes/auth.js';
 import orderRoutes from './routes/orders.js';
 import adminRoutes from './routes/admin.js';
 import stripeRoutes from './routes/stripe.js';
+import paypalRoutes from './routes/paypal.js';
 import carrierRoutes from './routes/carriers.js';
 import tenantRoutes from './routes/tenant.js';
 import checkoutRoutes from './routes/checkout.js';
@@ -92,6 +93,7 @@ const authLimiter = rateLimit({
 
 // Stripe webhooks must receive the raw body before JSON parsing.
 app.use('/api/stripe', stripeRoutes);
+app.use('/api/paypal', paypalRoutes);
 
 app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || '12mb' }));
 app.use(express.urlencoded({ extended: false, limit: '128kb' }));

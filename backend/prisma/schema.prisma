@@ -396,6 +396,7 @@ model OAuthState {
   id         String    @id @default(cuid())
   tokenHash  String    @unique
   provider   String
+  nonce      String?
   expiresAt  DateTime
   consumedAt DateTime?
   createdAt  DateTime  @default(now())
@@ -1181,28 +1182,30 @@ model WithdrawalRequest {
 }
 
 model Order {
-  id                      String            @id @default(cuid())
+  id                      String               @id @default(cuid())
   tenantId                String
-  tenant                  Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  stripeCheckoutSessionId String?           @unique
+  tenant                  Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  stripeCheckoutSessionId String?              @unique
   stripePaymentIntentId   String?
+  paypalOrderId           String?              @unique
+  paypalCaptureId         String?              @unique
   customerEmail           String
   customerName            String?
-  status                  OrderStatus       @default(PENDING)
-  paymentStatus           PaymentStatus     @default(PENDING)
-  fulfillmentStatus       FulfillmentStatus @default(UNCONFIRMED)
+  status                  OrderStatus          @default(PENDING)
+  paymentStatus           PaymentStatus        @default(PENDING)
+  fulfillmentStatus       FulfillmentStatus    @default(UNCONFIRMED)
   shippingCarrier         String?
   trackingNumber          String?
   confirmedAt             DateTime?
   shippedAt               DateTime?
   deliveredAt             DateTime?
-  refundedCents           Int               @default(0)
+  refundedCents           Int                  @default(0)
   adminNotes              String?
-  currency                String            @default("cad")
+  currency                String               @default("cad")
   subtotalCents           Int
   shippingCents           Int
   totalCents              Int
-  shippingCountry         String            @default("CA")
+  shippingCountry         String               @default("CA")
   shippingProvince        String?
   shippingState           String?
   shippingAddressJson     Json?
@@ -1215,16 +1218,30 @@ model Order {
   attributionUtmCampaign  String?
   attributionUtmTerm      String?
   attributionUtmContent   String?
-  createdAt               DateTime          @default(now())
-  updatedAt               DateTime          @updatedAt
+  createdAt               DateTime             @default(now())
+  updatedAt               DateTime             @updatedAt
   items                   OrderItem[]
   ledger                  TenantLedger?
   cryptoInvoice           CryptoInvoice?
+  paypalEvents            PaypalWebhookEvent[]
 
   @@index([tenantId])
   @@index([customerEmail])
   @@index([attributionUtmSource])
   @@index([attributionUtmCampaign])
+}
+
+model PaypalWebhookEvent {
+  id              String   @id @default(cuid())
+  providerEventId String   @unique
+  eventType       String
+  orderId         String?
+  order           Order?   @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  payloadHash     String
+  processedAt     DateTime @default(now())
+
+  @@index([orderId])
+  @@index([eventType, processedAt])
 }
 
 enum CryptoInvoiceStatus {

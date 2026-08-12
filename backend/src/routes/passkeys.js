@@ -8,8 +8,9 @@ import { requireAuth } from '../middleware/requireauth.js';
 
 const router = Router();
 const rpName = process.env.PASSKEY_RP_NAME || 'Loadlyx';
-const rpId = process.env.PASSKEY_RP_ID || 'localhost';
-const expectedOrigin = (process.env.PASSKEY_ORIGINS || process.env.PASSKEY_ORIGIN || 'http://localhost:3000').split(',').map((value) => value.trim()).filter(Boolean);
+const defaultOrigin = process.env.PUBLIC_APP_URL || process.env.FRONTEND_URL || 'http://localhost:3000';
+const rpId = process.env.PASSKEY_RP_ID || new URL(defaultOrigin).hostname;
+const expectedOrigin = (process.env.PASSKEY_ORIGINS || process.env.PASSKEY_ORIGIN || defaultOrigin).split(',').map((value) => value.trim()).filter(Boolean);
 const expiresAt = () => new Date(Date.now() + 5 * 60 * 1000);
 
 async function storeChallenge({ userId = null, email = null, challenge, purpose }) {

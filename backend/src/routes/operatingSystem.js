@@ -9,6 +9,7 @@ import { enqueueJob } from '../services/durableQueue.js';
 import { PLATFORM_EVENTS, publishEvent } from '../services/eventBus.js';
 import { applyInventoryMovement, availableStock } from '../services/inventoryService.js';
 import { assertToteTransition } from '../services/toteService.js';
+import { environmentVariableAudit, providerConfigurationStatus } from '../services/providerStatus.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -99,6 +100,7 @@ router.get('/digital-passes', async (req, res, next) => { try { const tenantId =
 
 router.get('/metrics/outcomes', async (req, res, next) => { try { const tenantId = tenantScope(req, req.query.tenantId || null, false); const where = tenantId ? { tenantId } : {}; const [quotes, acceptedQuotes, orders, orderValue, loads, completedLoads] = await Promise.all([prisma.quote.count({ where }), prisma.quote.count({ where: { ...where, status: { in: ['CONVERTED','LOAD_CREATED'] } } }), prisma.order.count({ where }), prisma.order.aggregate({ where: { ...where, paymentStatus: 'PAID' }, _sum: { totalCents: true } }), prisma.load.count({ where }), prisma.load.count({ where: { ...where, status: 'COMPLETED' } })]); return res.json({ sources: { quoteCount: quotes, convertedQuoteCount: acceptedQuotes, paidOrderCount: orders, loadCount: loads, completedLoadCount: completedLoads }, metrics: { quoteConversionRate: quotes ? acceptedQuotes / quotes : null, paidStoreValueCents: orderValue._sum.totalCents || 0, loadCompletionRate: loads ? completedLoads / loads : null }, calculatedAt: new Date().toISOString() }); } catch (error) { return next(error); } });
 
-router.get('/admin/integrations', requirePlatformRole, (_req, res) => res.json({ ai: { configured: Boolean(process.env.AI_API_KEY), provider: process.env.AI_PROVIDER || 'DISABLED' }, jobs: { provider: 'POSTGRES_DURABLE_QUEUE' }, email: { configured: Boolean(process.env.EMAIL_WEBHOOK_URL) }, sms: { configured: Boolean(process.env.SMS_PROVIDER_KEY) }, maps: { configured: Boolean(process.env.MAPS_API_KEY) }, crypto: { provider: process.env.CRYPTO_PROVIDER || 'MOCK', externallyVerified: false }, passkeys: { rpId: process.env.PASSKEY_RP_ID || 'localhost', origin: process.env.PASSKEY_ORIGIN || 'http://localhost:3000' }, walletPasses: { appleConfigured: Boolean(process.env.APPLE_PASS_CERTIFICATE), googleConfigured: Boolean(process.env.GOOGLE_WALLET_CREDENTIALS) } }));
+router.get('/admin/integrations', requirePlatformRole, (_req, res) => res.json({ ...providerConfigurationStatus(), ai: { configured: Boolean(process.env.AI_API_KEY), provider: process.env.AI_PROVIDER || 'DISABLED' }, jobs: { provider: 'POSTGRES_DURABLE_QUEUE' }, sms: { configured: Boolean(process.env.SMS_PROVIDER_KEY) }, maps: { configured: Boolean(process.env.MAPS_API_KEY) }, walletPasses: { appleConfigured: Boolean(process.env.APPLE_PASS_CERTIFICATE), googleConfigured: Boolean(process.env.GOOGLE_WALLET_CREDENTIALS) } }));
+router.get('/admin/integrations/environment', requirePlatformRole, (_req, res) => res.json({ variables: environmentVariableAudit(), note: 'Names and presence only. Secret values are never returned.' }));
 
 export default router;

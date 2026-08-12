@@ -269,8 +269,9 @@ router.get('/oauth/:provider/start', async (req, res, next) => {
   const readiness = oauthReadiness(provider);
   if (!readiness.configured) return res.status(503).json({ error: `${provider} login is not configured`, missing: readiness.missing });
   const state = createRawToken(32);
-  await prisma.oauthState.create({ data: { tokenHash: hashToken(state), provider, expiresAt: minutesFromNow(10) } });
-  return res.redirect(authorizationUrl(config, state));
+  const nonce = ['apple','google'].includes(provider) ? createRawToken(32) : null;
+  await prisma.oauthState.create({ data: { tokenHash: hashToken(state), nonce, provider, expiresAt: minutesFromNow(10) } });
+  return res.redirect(authorizationUrl(config, state, nonce));
   } catch (error) { return next(error); }
 });
 
@@ -285,7 +286,7 @@ async function oauthCallback(req, res) {
     const storedState = await prisma.oauthState.findUnique({ where: { tokenHash: hashToken(state) } });
     if (!storedState || storedState.provider !== provider || storedState.consumedAt || storedState.expiresAt < new Date()) throw new Error('OAuth state is invalid or expired');
     await prisma.oauthState.update({ where: { id: storedState.id }, data: { consumedAt: new Date() } });
-    const profile = await exchangeOAuthCode(config, code);
+    const profile = await exchangeOAuthCode(config, code, storedState.nonce || null);
     let account = await prisma.oauthAccount.findUnique({ where: { provider_providerAccountId: { provider, providerAccountId: profile.providerAccountId } }, include: { user: { include: { tenant: true } } } });
     let user = account?.user || null;
     if (!account) requireVerifiedOAuthIdentity(profile);

@@ -6,6 +6,7 @@ import { claimJob, completeJob, failJob } from './services/durableQueue.js';
 import { deliverNotification } from './services/notificationService.js';
 import { runWorkflow } from './services/workflowRunner.js';
 import { runScheduledSimulation } from './services/simulationService.js';
+import { chainSupportMatrix, nextCryptoStatus } from './services/cryptoService.js';
 
 const workerId = `${process.pid}:${crypto.randomUUID()}`;
 const queues = (process.env.WORKER_QUEUES || 'workflows,notifications,tracking,eta,matching,alerts,risk,rates,documents,blockchain,default').split(',').map((value) => value.trim()).filter(Boolean);
@@ -27,7 +28,16 @@ async function execute(job) {
       throw error;
     }
   }
-  if (['TRACKING_EVENT','ETA_RECALCULATION','MATCHING_RECALCULATION','SAVED_SEARCH_ALERT','RISK_RECALCULATION','RATE_AGGREGATION','DOCUMENT_PROCESSING','BLOCKCHAIN_LISTENER_TICK','PUSH_NOTIFICATION'].includes(job.jobType)) return { accepted: true, jobType: job.jobType, providerConfigured: job.jobType !== 'PUSH_NOTIFICATION' || Boolean(process.env.PUSH_PROVIDER_KEY), processedAt: new Date().toISOString() };
+  if (job.jobType === 'BLOCKCHAIN_LISTENER_TICK') {
+    const matrix = chainSupportMatrix();
+    const invoices = await prisma.cryptoInvoice.findMany({ where: { status: { in: ['AWAITING_PAYMENT','DETECTED','CONFIRMING','UNDERPAID'] }, expiresAt: { gt: new Date() } }, take: 250 });
+    for (const invoice of invoices) {
+      const status = nextCryptoStatus({ expectedAmount: invoice.cryptoAmount, receivedAmount: invoice.amountReceived, confirmations: invoice.confirmations, requiredConfirmations: invoice.requiredConfirmations, expired: false });
+      if (status !== invoice.status) await prisma.cryptoInvoice.update({ where: { id: invoice.id }, data: { status } });
+    }
+    return { accepted: true, jobType: job.jobType, invoicesInspected: invoices.length, chains: matrix, note: 'Configured adapters must independently verify chain transfers before updating received amounts.' };
+  }
+  if (['TRACKING_EVENT','ETA_RECALCULATION','MATCHING_RECALCULATION','SAVED_SEARCH_ALERT','RISK_RECALCULATION','RATE_AGGREGATION','DOCUMENT_PROCESSING','PUSH_NOTIFICATION'].includes(job.jobType)) return { accepted: true, jobType: job.jobType, providerConfigured: job.jobType !== 'PUSH_NOTIFICATION' || Boolean(process.env.PUSH_PROVIDER_KEY), processedAt: new Date().toISOString() };
   throw new Error(`No worker handler registered for ${job.jobType}`);
 }
 
