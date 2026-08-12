@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { prisma } from '../db/prisma.js';
-import { requireAuth, requirePlatformRole } from '../middleware/requireauth.js';
+import { requireAuth, requirePlatformFinance, requirePlatformRole } from '../middleware/requireauth.js';
 import { SUBSCRIPTION_PLANS, getSubscriptionPlan } from '../config/plans.js';
 import { getCommissionPolicy, recordMarketplaceSettlement, recordPayout, recordRefund, recordSubscriptionPayment } from '../services/ledgerService.js';
 
@@ -90,7 +90,7 @@ router.get('/admin/policies', requireAuth, requirePlatformRole, async (_req, res
   return res.json({ policies: await prisma.commissionPolicy.findMany({ include: { tenant: { select: { id: true, name: true, slug: true } } }, orderBy: { scopeKey: 'asc' } }) });
 });
 
-router.put('/admin/plans/:code', requireAuth, requirePlatformRole, async (req, res) => {
+router.put('/admin/plans/:code', requireAuth, requirePlatformFinance, async (req, res) => {
   const code = String(req.params.code || '').trim().toUpperCase();
   if (!getSubscriptionPlan(code)) return res.status(400).json({ error: 'Plan code must be STARTER, GROWTH, or PROFESSIONAL' });
   const name = String(req.body.name || '').trim();
@@ -115,7 +115,7 @@ router.put('/admin/plans/:code', requireAuth, requirePlatformRole, async (req, r
   return res.json({ plan });
 });
 
-router.put('/admin/policies/:scopeKey', requireAuth, requirePlatformRole, async (req, res) => {
+router.put('/admin/policies/:scopeKey', requireAuth, requirePlatformFinance, async (req, res) => {
   const scopeKey = String(req.params.scopeKey || '').trim().toUpperCase();
   const storeCommissionBps = Number(req.body.storeCommissionBps);
   const marketplaceCommissionBps = Number(req.body.marketplaceCommissionBps);
@@ -156,14 +156,14 @@ router.get('/admin/summary', requireAuth, requirePlatformRole, async (_req, res)
   return res.json({ platformRevenueCents: (platformCredits._sum.amountCents || 0) - (platformDebits._sum.amountCents || 0), pendingPayouts, byKind, subscriptions, recentTransactions, withdrawals: withdrawalRows });
 });
 
-router.post('/admin/marketplace-settlements', requireAuth, requirePlatformRole, async (req, res) => {
+router.post('/admin/marketplace-settlements', requireAuth, requirePlatformFinance, async (req, res) => {
   const deal = req.body;
   if (!deal?.id || !Number.isSafeInteger(deal.grossCents) || deal.grossCents <= 0) return res.status(400).json({ error: 'Deal id and positive grossCents are required' });
   const transaction = await prisma.$transaction((tx) => recordMarketplaceSettlement(tx, deal));
   return res.status(201).json({ transaction });
 });
 
-router.post('/admin/subscriptions/:id/payments', requireAuth, requirePlatformRole, async (req, res) => {
+router.post('/admin/subscriptions/:id/payments', requireAuth, requirePlatformFinance, async (req, res) => {
   const referenceId = String(req.body.referenceId || '').trim();
   if (!referenceId) return res.status(400).json({ error: 'Payment referenceId is required' });
   const subscription = await prisma.subscription.findUnique({ where: { id: req.params.id } });
@@ -172,7 +172,7 @@ router.post('/admin/subscriptions/:id/payments', requireAuth, requirePlatformRol
   return res.status(201).json({ transaction });
 });
 
-router.post('/admin/transactions/:id/refunds', requireAuth, requirePlatformRole, async (req, res) => {
+router.post('/admin/transactions/:id/refunds', requireAuth, requirePlatformFinance, async (req, res) => {
   const amountCents = Number(req.body.amountCents);
   const reason = String(req.body.reason || '').trim();
   const reference = String(req.body.reference || '').trim();
@@ -183,7 +183,7 @@ router.post('/admin/transactions/:id/refunds', requireAuth, requirePlatformRole,
   return res.status(201).json({ transaction });
 });
 
-router.post('/admin/withdrawals/:id/approve', requireAuth, requirePlatformRole, async (req, res) => {
+router.post('/admin/withdrawals/:id/approve', requireAuth, requirePlatformFinance, async (req, res) => {
   const reason = String(req.body.reason || '').trim();
   if (!reason) return res.status(400).json({ error: 'Approval reason is required' });
   const before = await prisma.withdrawalRequest.findUnique({ where: { id: req.params.id } });
@@ -196,7 +196,7 @@ router.post('/admin/withdrawals/:id/approve', requireAuth, requirePlatformRole, 
   return res.json({ withdrawal });
 });
 
-router.post('/admin/withdrawals/:id/pay', requireAuth, requirePlatformRole, async (req, res) => {
+router.post('/admin/withdrawals/:id/pay', requireAuth, requirePlatformFinance, async (req, res) => {
   const paymentReference = String(req.body.paymentReference || '').trim();
   if (!paymentReference) return res.status(400).json({ error: 'Payment reference is required' });
   const withdrawal = await prisma.withdrawalRequest.findUnique({ where: { id: req.params.id } });

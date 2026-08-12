@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 
 import { prisma } from '../db/prisma.js';
-import { requireAuth, requirePlatformRole } from '../middleware/requireauth.js';
+import { requireAuth, requirePlatformRole, requirePlatformWrite } from '../middleware/requireauth.js';
 
 const router = Router();
 router.use(requireAuth, requirePlatformRole);
@@ -58,6 +58,8 @@ router.put('/users/:id', requireWrite, async (req, res, next) => {
     const before = await prisma.user.findUnique({ where: { id: req.params.id } });
     if (!before) return res.status(404).json({ error: 'User not found' });
     if (before.role === 'SUPER_ADMIN' && req.user.role !== 'SUPER_ADMIN') return res.status(403).json({ error: 'Only Super Admin may modify a Super Admin' });
+    if (input.role && ['SUPER_ADMIN', 'PLATFORM_ADMIN'].includes(input.role) && req.user.role !== 'SUPER_ADMIN') return res.status(403).json({ error: 'Only Super Admin may grant platform-owner roles' });
+    if (input.role && req.user.userId === before.id && input.role !== before.role) return res.status(403).json({ error: 'Administrators cannot change their own role' });
     const updated = await prisma.$transaction(async (tx) => {
       const user = await tx.user.update({ where: { id: before.id }, data: { ...(input.isActive !== undefined ? { isActive: input.isActive } : {}), ...(input.role ? { role: input.role } : {}) } });
       if (input.isActive === false) await tx.authToken.updateMany({ where: { userId: user.id, type: 'REFRESH_TOKEN', consumedAt: null }, data: { consumedAt: new Date() } });
@@ -117,7 +119,7 @@ router.put('/feature-flags/:key', requireWrite, async (req, res, next) => {
 
 router.get('/audit-events', async (req, res, next) => { try { return res.json(await prisma.auditEvent.findMany({ where: req.query.entityType ? { entityType: String(req.query.entityType) } : {}, orderBy: { createdAt: 'desc' }, take: 500 })); } catch (error) { return next(error); } });
 router.get('/support-tickets', async (_req, res, next) => { try { return res.json(await prisma.supportTicket.findMany({ orderBy: { createdAt: 'desc' }, take: 500 })); } catch (error) { return next(error); } });
-router.put('/support-tickets/:id', async (req, res, next) => {
+router.put('/support-tickets/:id', requirePlatformWrite, async (req, res, next) => {
   try {
     const input = z.object({ status: z.enum(['OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED']), assignedTo: z.string().max(120).optional(), resolution: z.string().max(5000).optional() }).parse(req.body);
     return res.json(await prisma.supportTicket.update({ where: { id: req.params.id }, data: input }));

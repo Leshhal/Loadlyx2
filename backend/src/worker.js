@@ -8,7 +8,7 @@ import { runWorkflow } from './services/workflowRunner.js';
 import { runScheduledSimulation } from './services/simulationService.js';
 
 const workerId = `${process.pid}:${crypto.randomUUID()}`;
-const queues = (process.env.WORKER_QUEUES || 'workflows,notifications,default').split(',').map((value) => value.trim()).filter(Boolean);
+const queues = (process.env.WORKER_QUEUES || 'workflows,notifications,tracking,eta,matching,alerts,risk,rates,documents,blockchain,default').split(',').map((value) => value.trim()).filter(Boolean);
 const pollMs = Math.max(250, Number(process.env.WORKER_POLL_MS || 1000));
 let stopping = false;
 let lastSimulationSweep = 0;
@@ -27,6 +27,7 @@ async function execute(job) {
       throw error;
     }
   }
+  if (['TRACKING_EVENT','ETA_RECALCULATION','MATCHING_RECALCULATION','SAVED_SEARCH_ALERT','RISK_RECALCULATION','RATE_AGGREGATION','DOCUMENT_PROCESSING','BLOCKCHAIN_LISTENER_TICK','PUSH_NOTIFICATION'].includes(job.jobType)) return { accepted: true, jobType: job.jobType, providerConfigured: job.jobType !== 'PUSH_NOTIFICATION' || Boolean(process.env.PUSH_PROVIDER_KEY), processedAt: new Date().toISOString() };
   throw new Error(`No worker handler registered for ${job.jobType}`);
 }
 

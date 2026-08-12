@@ -10,7 +10,7 @@ const roleConfig = {
     eyebrow: 'Freight Exchange account',
     title: 'Your loads, offers, and movement in one focused workspace.',
     description: 'Post your own loads and track marketplace activity without access to tenant business operations.',
-    primary: ['Post a load', '/loadboard'], secondary: ['Browse loads', '/loadboard'],
+    primary: ['Open Loadlyx Connect', '/app/connect'], secondary: ['Browse loads', '/loadboard'],
     modules: [['My loads','Review loads connected to your account.','/loads','route'],['Offers','Compare responses and marketplace status.','/app/marketplace-offers','spark'],['Agreements & payments','Follow awarded work and payment status.','/app/marketplace-transactions','chart']]
   },
   BROKER: { eyebrow:'Broker workspace',title:'Keep customer loads and carrier opportunities moving.',description:'See customer demand, marketplace options, and operational handoff.',primary:['Browse load board','/loadboard'],secondary:['Open CRM','/app/crm'],modules:[['Customer pipeline','Review quote demand and follow-up needs.','/app/crm','users'],['Carrier marketplace','Find and compare eligible opportunities.','/loadboard','search'],['Dispatch handoff','Review scheduled and unassigned loads.','/app/dispatch','route']] },

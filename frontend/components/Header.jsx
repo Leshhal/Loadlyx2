@@ -9,7 +9,7 @@ import { apiFetch } from '@/lib/api';
 const MARKETING_PATHS = new Set(['/', '/solutions', '/resources', '/pricing']);
 
 const marketingLinks = [
-  { href: '/loadboard', label: 'Load Board' },
+  { href: '/loadboard', label: 'Loadlyx Connect' },
   { href: '/solutions', label: 'Solutions' },
   { href: '/resources', label: 'Resources' },
   { href: '/pricing', label: 'Pricing' }
@@ -19,7 +19,7 @@ const appLinks = [
   { href: '/app/dashboard', label: 'Dashboard' },
   { href: '/app/products', label: 'Products' },
   { href: '/app/quotes', label: 'Quotes' },
-  { href: '/app/loadboard', label: 'Load Board' }
+  { href: '/app/connect', label: 'Connect' }
 ];
 
 const adminLinks = [
@@ -105,14 +105,17 @@ export default function Header() {
     routeMode === 'app' ? appLinks :
     routeMode === 'tenant' ? tenantLinks :
     routeMode === 'loadboard' ? [
-      { href: '/loadboard', label: 'Browse Loads' }
+      { href: '/loadboard#marketplace', label: 'Browse Loads' },
+      { href: '/loadboard#how-it-works', label: 'How It Works' },
+      { href: '/loadboard#carriers', label: 'For Carriers' },
+      { href: '/loadboard#brokers', label: 'For Brokers' }
     ] : marketingLinks;
 
   const brandText =
     routeMode === 'admin' ? 'Loadlyx Admin' :
     routeMode === 'app' ? 'Loadlyx App' :
     routeMode === 'tenant' ? (tenantProfile?.name || 'Tenant Storefront') :
-    routeMode === 'loadboard' ? 'Freight Exchange' : 'Loadlyx';
+    routeMode === 'loadboard' ? 'Loadlyx Connect' : 'Loadlyx';
 
   const brandHref =
     routeMode === 'admin' ? '/admin/dashboard' :

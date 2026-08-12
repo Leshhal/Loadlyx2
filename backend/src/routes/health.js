@@ -15,4 +15,15 @@ router.get('/ready', async (_req, res) => {
   }
 });
 
+router.get('/providers', async (_req, res) => {
+  try {
+    const [partners, queued, running] = await Promise.all([
+      prisma.freightServicePartner.findMany({ select: { serviceType: true, name: true, status: true, enabled: true, externalApiConfigured: true } }),
+      prisma.backgroundJob.count({ where: { status: { in: ['QUEUED','RETRY_SCHEDULED'] } } }),
+      prisma.backgroundJob.count({ where: { status: 'RUNNING' } })
+    ]);
+    return res.json({ database: 'available', worker: { queue: 'postgres-durable', queued, running }, payments: { stripe: Boolean(process.env.STRIPE_SECRET_KEY) }, blockchain: { listenerConfigured: Boolean(process.env.CRYPTO_LISTENER_URL) }, freightServices: partners, timestamp: new Date().toISOString() });
+  } catch { return res.status(503).json({ database: 'unavailable', timestamp: new Date().toISOString() }); }
+});
+
 export default router;

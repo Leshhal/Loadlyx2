@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 
 import { prisma } from '../db/prisma.js';
-import { requireAuth, requirePlatformRole } from '../middleware/requireauth.js';
+import { requireAuth, requirePlatformRole, requirePlatformWrite } from '../middleware/requireauth.js';
 import { mergeThemeSettings, validateThemeManifest } from '../services/themeService.js';
 
 const router = Router();
@@ -71,7 +71,7 @@ router.post('/upload', requireAuth, async (req, res, next) => {
   }
 });
 
-router.put('/:id/status', requireAuth, requirePlatformRole, async (req, res, next) => {
+router.put('/:id/status', requireAuth, requirePlatformRole, requirePlatformWrite, async (req, res, next) => {
   try {
     const status = z.enum(['APPROVED', 'DISABLED', 'DEPRECATED']).parse(req.body?.status);
     const reason = z.string().min(3).max(500).parse(req.body?.reason);

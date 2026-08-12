@@ -23,7 +23,7 @@ import { validateTenantSlug } from '../lib/tenantSlug.js';
 import { clearRefreshCookie, readCookie, setRefreshCookie } from '../lib/authCookies.js';
 import { SUBSCRIPTION_PLANS } from '../config/plans.js';
 import { publishEvent } from '../services/eventBus.js';
-import { authorizationUrl, exchangeOAuthCode, oauthConfig, oauthReadiness } from '../services/oauthService.js';
+import { authorizationUrl, exchangeOAuthCode, oauthConfig, oauthReadiness, requireVerifiedOAuthIdentity } from '../services/oauthService.js';
 
 const router = Router();
 const OAUTH_PROVIDER_KEYS = ['google', 'apple', 'discord'];
@@ -288,9 +288,9 @@ async function oauthCallback(req, res) {
     const profile = await exchangeOAuthCode(config, code);
     let account = await prisma.oauthAccount.findUnique({ where: { provider_providerAccountId: { provider, providerAccountId: profile.providerAccountId } }, include: { user: { include: { tenant: true } } } });
     let user = account?.user || null;
-    if (!user && profile.email) user = await prisma.user.findUnique({ where: { email: normalizeEmail(profile.email) }, include: { tenant: true } });
+    if (!account) requireVerifiedOAuthIdentity(profile);
+    if (!user) user = await prisma.user.findUnique({ where: { email: normalizeEmail(profile.email) }, include: { tenant: true } });
     if (!user) {
-      if (!profile.email || !profile.emailVerified) throw new Error('The provider must return a verified email address');
       user = await prisma.user.create({ data: { email: normalizeEmail(profile.email), fullName: profile.name || 'Marketplace user', role: 'MARKETPLACE_USER', emailVerifiedAt: new Date() }, include: { tenant: true } });
     }
     if (!account) await prisma.oauthAccount.create({ data: { userId: user.id, provider, providerAccountId: profile.providerAccountId } });

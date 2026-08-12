@@ -26,6 +26,13 @@ export function oauthReadiness(provider) {
   return { configured: missing.length === 0, missing };
 }
 
+export function requireVerifiedOAuthIdentity(profile) {
+  if (!profile?.email || profile.emailVerified !== true) {
+    throw new Error('The provider must return a verified email address');
+  }
+  return profile;
+}
+
 export function authorizationUrl(config, state) {
   const url = new URL(config.authorizeUrl);
   url.searchParams.set('client_id', config.clientId);

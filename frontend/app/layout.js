@@ -1,11 +1,12 @@
-import './globals.css';
+﻿import './globals.css';
 import Header from '../components/Header';
 import AttributionTracker from '../components/AttributionTracker';
 import ConnectionHeartbeat from '../components/ConnectionHeartbeat';
 
 export const metadata = {
-  title: 'Loadlyx',
-  description: 'Loadlyx logistics platform — marketing site, platform, tenant storefronts, and admin.'
+  title: { default: 'Loadlyx', template: '%s | Loadlyx' },
+  description: 'Loadlyx connects SaaS operations, tenant storefronts, and Loadlyx Connect freight execution.',
+  openGraph: { title: 'Loadlyx', description: 'SaaS operations, storefronts, and the Loadlyx Connect freight network.', type: 'website' }
 };
 
 const themeBootScript = `(() => {
@@ -33,3 +34,4 @@ export default function RootLayout({ children }) {
     </html>
   );
 }
+

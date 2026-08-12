@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { Icon, PageHeader, SectionHeading } from '@/components/ui/LoadlyxUI';
 
 const guides = [
-  ['Post a marketplace load', 'Build a clear shipment request, receive eligible offers, and keep commercial terms private until sign-in.', '/loadboard', 'route'],
+  ['Use Loadlyx Connect', 'Post freight, receive eligible offers, and coordinate execution while keeping commercial terms private until sign-in.', '/loadboard', 'route'],
   ['Launch a tenant storefront', 'Configure tenant branding, contact details, social profiles, products, and public pages.', '/signup', 'store'],
   ['Prepare a moving quote', 'Capture move details in a structured workflow that can connect to supplies and fulfilment.', '/quote', 'chart'],
   ['Understand account paths', 'See how customers, brokers, carriers, tenants, and platform staff use separate workspaces.', '/solutions', 'users']

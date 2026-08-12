@@ -9,6 +9,8 @@ if (!env.jwtSecret) {
 
 const ADMIN_ROLES = ['SUPER_ADMIN', 'PLATFORM_ADMIN', 'ADMIN', 'SUPPORT', 'TENANT_ADMIN'];
 const PLATFORM_ROLES = ['SUPER_ADMIN', 'PLATFORM_ADMIN', 'ADMIN', 'SUPPORT'];
+const PLATFORM_WRITE_ROLES = ['SUPER_ADMIN', 'PLATFORM_ADMIN', 'ADMIN'];
+const PLATFORM_FINANCE_ROLES = ['SUPER_ADMIN', 'PLATFORM_ADMIN'];
 
 export async function requireAuth(req, res, next) {
   try {
@@ -45,6 +47,18 @@ export function requireAdmin(req, res, next) {
 export function requirePlatformRole(req, res, next) {
   if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
   if (!PLATFORM_ROLES.includes(req.user.role)) return res.status(403).json({ error: 'Forbidden' });
+  next();
+}
+
+export function requirePlatformWrite(req, res, next) {
+  if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+  if (!PLATFORM_WRITE_ROLES.includes(req.user.role)) return res.status(403).json({ error: 'Platform write access required' });
+  next();
+}
+
+export function requirePlatformFinance(req, res, next) {
+  if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+  if (!PLATFORM_FINANCE_ROLES.includes(req.user.role)) return res.status(403).json({ error: 'Platform finance administrator required' });
   next();
 }
 

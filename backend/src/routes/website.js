@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../db/prisma.js';
-import { requireAuth, requirePlatformRole } from '../middleware/requireauth.js';
+import { requireAuth, requirePlatformRole, requirePlatformWrite } from '../middleware/requireauth.js';
 
 const router = Router();
 const sectionSchema = z.object({
@@ -53,7 +53,7 @@ router.use(requireAuth, requirePlatformRole);
 router.get('/homepage', async (_req, res, next) => {
   try { return res.json(await prisma.websiteContentVersion.findMany({ where: { contentKey: 'homepage' }, orderBy: { version: 'desc' }, take: 30 })); } catch (error) { return next(error); }
 });
-router.post('/homepage/drafts', async (req, res, next) => {
+router.post('/homepage/drafts', requirePlatformWrite, async (req, res, next) => {
   try {
     if (!['SUPER_ADMIN', 'PLATFORM_ADMIN', 'ADMIN'].includes(req.user.role)) return res.status(403).json({ error: 'Read-only platform role' });
     const contentJson = sanitizeHomepage(req.body);
@@ -99,13 +99,13 @@ router.post('/homepage/:id/rollback', async (req, res, next) => {
 });
 
 router.get('/social-links', async (_req, res, next) => { try { return res.json(await prisma.websiteSocialLink.findMany({ orderBy: [{ displayOrder: 'asc' }, { platform: 'asc' }] })); } catch (error) { return next(error); } });
-router.post('/social-links', async (req, res, next) => {
+router.post('/social-links', requirePlatformWrite, async (req, res, next) => {
   try { const input = socialSchema.parse(req.body); const row = await prisma.websiteSocialLink.create({ data: { ...input, updatedById: req.user.userId } }); await prisma.auditEvent.create({ data: { actorUserId: req.user.userId, action: 'SOCIAL_LINK_CREATED', entityType: 'WEBSITE_SOCIAL_LINK', entityId: row.id, afterJson: row } }); return res.status(201).json(row); } catch (error) { return next(error); }
 });
-router.put('/social-links/:id', async (req, res, next) => {
+router.put('/social-links/:id', requirePlatformWrite, async (req, res, next) => {
   try { const input = socialSchema.parse(req.body); const before = await prisma.websiteSocialLink.findUnique({ where: { id: req.params.id } }); if (!before) return res.status(404).json({ error: 'Social link not found' }); const row = await prisma.websiteSocialLink.update({ where: { id: before.id }, data: { ...input, updatedById: req.user.userId } }); await prisma.auditEvent.create({ data: { actorUserId: req.user.userId, action: 'SOCIAL_LINK_UPDATED', entityType: 'WEBSITE_SOCIAL_LINK', entityId: row.id, beforeJson: before, afterJson: row } }); return res.json(row); } catch (error) { return next(error); }
 });
-router.delete('/social-links/:id', async (req, res, next) => {
+router.delete('/social-links/:id', requirePlatformWrite, async (req, res, next) => {
   try { const before = await prisma.websiteSocialLink.findUnique({ where: { id: req.params.id } }); if (!before) return res.status(404).json({ error: 'Social link not found' }); await prisma.websiteSocialLink.delete({ where: { id: before.id } }); await prisma.auditEvent.create({ data: { actorUserId: req.user.userId, action: 'SOCIAL_LINK_DELETED', entityType: 'WEBSITE_SOCIAL_LINK', entityId: before.id, beforeJson: before } }); return res.status(204).end(); } catch (error) { return next(error); }
 });
 

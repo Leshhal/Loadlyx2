@@ -62,6 +62,7 @@ enum UserRole {
   MARKETPLACE_USER
   BROKER
   CARRIER
+  DRIVER
   STAFF
 }
 
@@ -129,63 +130,68 @@ enum LedgerDirection {
 }
 
 model Tenant {
-  id                    String                 @id @default(cuid())
-  name                  String
-  slug                  String                 @unique
-  primaryDomain         String?                @db.VarChar(255)
-  subdomain             String?                @unique @db.VarChar(63)
-  isActive              Boolean                @default(true)
-  isMaster              Boolean                @default(false)
-  subscriptionPlan      String                 @default("free")
-  brandingJson          Json?
-  email                 String?
-  createdAt             DateTime               @default(now())
-  updatedAt             DateTime               @updatedAt
-  products              Product[]
-  categories            Category[]
-  quotes                Quote[]
-  loads                 Load[]
-  orders                Order[]
-  tags                  Tag[]
-  carrierProfiles       CarrierProfile[]
-  users                 User[]
-  commissionPolicy      CommissionPolicy?
-  subscription          Subscription?
-  financialTransactions FinancialTransaction[]
-  ledgerEntries         LedgerEntry[]
-  mediaAssets           MediaAsset[]
-  themeActivation       TenantThemeActivation? @relation("ActiveTenantTheme")
-  uploadedThemes        StoreTheme[]           @relation("ThemeUploaderTenant")
-  reviews               Review[]
-  disputes              Dispute[]
-  connectionEvents      ConnectionEvent[]
-  simulationConfig      SimulationConfig?
-  simulationEvents      SimulationEvent[]
-  aiConfig              AiTenantConfig?
-  aiUsage               AiUsageEvent[]
-  cryptoSettings        CryptoPaymentSettings?
-  cryptoInvoices        CryptoInvoice[]
-  withdrawalRequests    WithdrawalRequest[]
-  aiAgents              AiAgentDefinition[]
-  aiRecommendations     AiRecommendation[]
-  approvalRequests      ApprovalRequest[]
-  platformEvents        PlatformEvent[]
-  workflows             WorkflowDefinition[]
-  workflowRuns          WorkflowRun[]
-  backgroundJobs        BackgroundJob[]
-  notifications         Notification[]
-  toteAssets            ToteAsset[]
-  toteRentals           ToteRental[]
-  inventoryLocations    InventoryLocation[]
-  inventoryStocks       InventoryStock[]
-  inventoryMovements    InventoryMovement[]
-  digitalPasses         DigitalPass[]
-  metricSnapshots       MetricSnapshot[]
-  productBadges         ProductBadge[]
-  shippingConfigs       TenantShippingConfig[]
-  shippingQuotes        ShippingQuote[]
-  securityBlocks        SecurityBlock[]
-  rentalBookings        RentalBooking[]
+  id                                 String                              @id @default(cuid())
+  name                               String
+  slug                               String                              @unique
+  primaryDomain                      String?                             @db.VarChar(255)
+  subdomain                          String?                             @unique @db.VarChar(63)
+  isActive                           Boolean                             @default(true)
+  isMaster                           Boolean                             @default(false)
+  subscriptionPlan                   String                              @default("free")
+  brandingJson                       Json?
+  email                              String?
+  createdAt                          DateTime                            @default(now())
+  updatedAt                          DateTime                            @updatedAt
+  products                           Product[]
+  categories                         Category[]
+  quotes                             Quote[]
+  loads                              Load[]
+  orders                             Order[]
+  tags                               Tag[]
+  carrierProfiles                    CarrierProfile[]
+  users                              User[]
+  commissionPolicy                   CommissionPolicy?
+  subscription                       Subscription?
+  financialTransactions              FinancialTransaction[]
+  ledgerEntries                      LedgerEntry[]
+  mediaAssets                        MediaAsset[]
+  themeActivation                    TenantThemeActivation?              @relation("ActiveTenantTheme")
+  uploadedThemes                     StoreTheme[]                        @relation("ThemeUploaderTenant")
+  reviews                            Review[]
+  disputes                           Dispute[]
+  connectionEvents                   ConnectionEvent[]
+  simulationConfig                   SimulationConfig?
+  simulationEvents                   SimulationEvent[]
+  aiConfig                           AiTenantConfig?
+  aiUsage                            AiUsageEvent[]
+  cryptoSettings                     CryptoPaymentSettings?
+  cryptoInvoices                     CryptoInvoice[]
+  withdrawalRequests                 WithdrawalRequest[]
+  aiAgents                           AiAgentDefinition[]
+  aiRecommendations                  AiRecommendation[]
+  approvalRequests                   ApprovalRequest[]
+  platformEvents                     PlatformEvent[]
+  workflows                          WorkflowDefinition[]
+  workflowRuns                       WorkflowRun[]
+  backgroundJobs                     BackgroundJob[]
+  notifications                      Notification[]
+  toteAssets                         ToteAsset[]
+  toteRentals                        ToteRental[]
+  inventoryLocations                 InventoryLocation[]
+  inventoryStocks                    InventoryStock[]
+  inventoryMovements                 InventoryMovement[]
+  digitalPasses                      DigitalPass[]
+  metricSnapshots                    MetricSnapshot[]
+  productBadges                      ProductBadge[]
+  shippingConfigs                    TenantShippingConfig[]
+  shippingQuotes                     ShippingQuote[]
+  securityBlocks                     SecurityBlock[]
+  rentalBookings                     RentalBooking[]
+  freightIntelligenceRecommendations FreightIntelligenceRecommendation[]
+  servicePartners                    FreightServicePartner[]
+  serviceApplications                FreightServiceApplication[]
+  carrierComplianceRecords           CarrierComplianceRecord[]
+  carrierInsurancePolicies           CarrierInsurancePolicy[]
 }
 
 enum StoreThemeStatus {
@@ -311,28 +317,41 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  authTokens               AuthToken[]
-  oauthAccounts            OAuthAccount[]
-  reviewsWritten           Review[]             @relation("ReviewAuthor")
-  reviewsReceived          Review[]             @relation("ReviewRecipient")
-  reviewVotes              ReviewHelpfulVote[]
-  reviewReports            ReviewReport[]
-  disputesOpened           Dispute[]            @relation("DisputeOpenedBy")
-  disputesAgainst          Dispute[]            @relation("DisputeAgainstUser")
-  connectionEvents         ConnectionEvent[]
-  marketplaceLoadsPosted   MarketplaceLoad[]    @relation("MarketplaceLoadPoster")
-  marketplaceLoadsBrokered MarketplaceLoad[]    @relation("MarketplaceLoadBroker")
-  marketplaceLoadsCarried  MarketplaceLoad[]    @relation("MarketplaceLoadCarrier")
-  marketplaceBids          MarketplaceBid[]
-  marketplaceMessages      MarketplaceMessage[]
-  aiRecommendations        AiRecommendation[]
-  approvalRequestsCreated  ApprovalRequest[]    @relation("ApprovalRequester")
-  approvalRequestsDecided  ApprovalRequest[]    @relation("ApprovalDecider")
-  notifications            Notification[]
-  passkeys                 PasskeyCredential[]
-  webauthnChallenges       WebAuthnChallenge[]
-  digitalPasses            DigitalPass[]
-  securityBlocksCreated    SecurityBlock[]      @relation("SecurityBlockCreator")
+  authTokens                         AuthToken[]
+  oauthAccounts                      OAuthAccount[]
+  reviewsWritten                     Review[]                            @relation("ReviewAuthor")
+  reviewsReceived                    Review[]                            @relation("ReviewRecipient")
+  reviewVotes                        ReviewHelpfulVote[]
+  reviewReports                      ReviewReport[]
+  disputesOpened                     Dispute[]                           @relation("DisputeOpenedBy")
+  disputesAgainst                    Dispute[]                           @relation("DisputeAgainstUser")
+  connectionEvents                   ConnectionEvent[]
+  marketplaceLoadsPosted             MarketplaceLoad[]                   @relation("MarketplaceLoadPoster")
+  marketplaceLoadsBrokered           MarketplaceLoad[]                   @relation("MarketplaceLoadBroker")
+  marketplaceLoadsCarried            MarketplaceLoad[]                   @relation("MarketplaceLoadCarrier")
+  marketplaceBids                    MarketplaceBid[]
+  marketplaceMessages                MarketplaceMessage[]
+  driverProfile                      FreightDriverProfile?
+  truckAvailabilities                TruckAvailability[]                 @relation("TruckAvailabilityCreator")
+  assignedTruckCapacity              TruckAvailability[]                 @relation("TruckAvailabilityDriver")
+  freightAssignments                 FreightAssignment[]                 @relation("FreightAssignmentDriver")
+  freightAssignmentsMade             FreightAssignment[]                 @relation("FreightAssignmentAssigner")
+  freightStatusEvents                FreightStatusEvent[]
+  freightTrackingPoints              FreightTrackingPoint[]
+  freightDocuments                   FreightDocument[]
+  freightSavedSearches               FreightSavedSearch[]
+  aiRecommendations                  AiRecommendation[]
+  approvalRequestsCreated            ApprovalRequest[]                   @relation("ApprovalRequester")
+  approvalRequestsDecided            ApprovalRequest[]                   @relation("ApprovalDecider")
+  notifications                      Notification[]
+  passkeys                           PasskeyCredential[]
+  webauthnChallenges                 WebAuthnChallenge[]
+  digitalPasses                      DigitalPass[]
+  securityBlocksCreated              SecurityBlock[]                     @relation("SecurityBlockCreator")
+  freightIntelligenceRecommendations FreightIntelligenceRecommendation[]
+  serviceApplications                FreightServiceApplication[]
+  complianceRecordsUpdated           CarrierComplianceRecord[]           @relation("ComplianceRecordUpdater")
+  insurancePoliciesVerified          CarrierInsurancePolicy[]            @relation("InsurancePolicyVerifier")
 
   @@index([tenantId])
   @@index([role])
@@ -1307,14 +1326,14 @@ enum MarketplaceBidStatus {
 }
 
 model MarketplaceLoad {
-  id                 String                @id @default(cuid())
+  id                 String                 @id @default(cuid())
   posterId           String
-  poster             User                  @relation("MarketplaceLoadPoster", fields: [posterId], references: [id], onDelete: Restrict)
+  poster             User                   @relation("MarketplaceLoadPoster", fields: [posterId], references: [id], onDelete: Restrict)
   brokerId           String?
-  broker             User?                 @relation("MarketplaceLoadBroker", fields: [brokerId], references: [id], onDelete: SetNull)
+  broker             User?                  @relation("MarketplaceLoadBroker", fields: [brokerId], references: [id], onDelete: SetNull)
   carrierId          String?
-  carrier            User?                 @relation("MarketplaceLoadCarrier", fields: [carrierId], references: [id], onDelete: SetNull)
-  postedForCustomer  Boolean               @default(false)
+  carrier            User?                  @relation("MarketplaceLoadCarrier", fields: [carrierId], references: [id], onDelete: SetNull)
+  postedForCustomer  Boolean                @default(false)
   customerName       String?
   customerEmail      String?
   title              String
@@ -1329,29 +1348,395 @@ model MarketplaceLoad {
   deliveryDate       DateTime?
   equipmentType      String?
   category           String?
-  volumeCubicM       Decimal?              @db.Decimal(12, 3)
+  volumeCubicM       Decimal?               @db.Decimal(12, 3)
   dimensionsJson     Json?
   specialHandling    String?
   imageUrls          Json?
   documentUrls       Json?
-  currency           String                @default("cad")
-  visibility         String                @default("PUBLIC")
+  currency           String                 @default("cad")
+  visibility         String                 @default("PUBLIC")
   expiresAt          DateTime?
-  weightKg           Decimal?              @db.Decimal(12, 2)
+  weightKg           Decimal?               @db.Decimal(12, 2)
   budgetCents        Int?
   awardedAmountCents Int?
-  status             MarketplaceLoadStatus @default(DRAFT)
+  status             MarketplaceLoadStatus  @default(DRAFT)
   proofOfDeliveryUrl String?
   deliveredAt        DateTime?
-  createdAt          DateTime              @default(now())
-  updatedAt          DateTime              @updatedAt
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
   bids               MarketplaceBid[]
   messages           MarketplaceMessage[]
+  assignment         FreightAssignment?
+  trackingPoints     FreightTrackingPoint[]
+  geofenceEvents     FreightGeofenceEvent[]
+  freightDocuments   FreightDocument[]
+  instantBookEnabled Boolean                @default(false)
+  instantBookCents   Int?
+  instantBookRules   Json?
+  fullOrPartial      String                 @default("FULL")
+  trailerType        String?
+  distanceKm         Decimal?               @db.Decimal(12, 2)
+  hazmat             Boolean                @default(false)
+  teamDriverRequired Boolean                @default(false)
 
   @@index([status, pickupDate])
   @@index([posterId, status])
   @@index([brokerId, status])
   @@index([carrierId, status])
+}
+
+enum TruckAvailabilityStatus {
+  AVAILABLE
+  RESERVED
+  ASSIGNED
+  IN_TRANSIT
+  UNAVAILABLE
+}
+
+enum FreightAssignmentStatus {
+  ASSIGNMENT_PENDING
+  DRIVER_ACCEPTED
+  DRIVER_DECLINED
+  EN_ROUTE_PICKUP
+  ARRIVED_PICKUP
+  LOADED
+  IN_TRANSIT
+  ARRIVED_DELIVERY
+  DELIVERED
+  POD_PENDING
+  COMPLETE
+}
+
+enum FreightDocumentCategory {
+  BILL_OF_LADING
+  PROOF_OF_DELIVERY
+  RATE_CONFIRMATION
+  INVOICE
+  PHOTO
+  DAMAGE
+  INSURANCE
+  AUTHORITY
+  OTHER
+}
+
+enum FreightGeofenceEventType {
+  APPROACHING_PICKUP
+  ARRIVED_PICKUP
+  DEPARTED_PICKUP
+  APPROACHING_DELIVERY
+  ARRIVED_DELIVERY
+}
+
+model FreightDriverProfile {
+  id                   String    @id @default(cuid())
+  userId               String    @unique
+  user                 User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  carrierId            String?
+  licenseRegion        String?
+  licenseClass         String?
+  phone                String?
+  emergencyContactJson Json?
+  trackingConsentAt    DateTime?
+  trackingRevokedAt    DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  @@index([carrierId])
+}
+
+model TruckAvailability {
+  id                  String                  @id @default(cuid())
+  carrierId           String
+  createdById         String
+  createdBy           User                    @relation("TruckAvailabilityCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  assignedDriverId    String?
+  assignedDriver      User?                   @relation("TruckAvailabilityDriver", fields: [assignedDriverId], references: [id], onDelete: SetNull)
+  truckId             String
+  equipmentType       String
+  trailerType         String?
+  capacityKg          Decimal?                @db.Decimal(12, 2)
+  currentCity         String
+  currentRegion       String?
+  currentLatitude     Decimal?                @db.Decimal(10, 7)
+  currentLongitude    Decimal?                @db.Decimal(10, 7)
+  availableAt         DateTime
+  desiredDestination  String?
+  maximumDeadheadKm   Decimal?                @db.Decimal(12, 2)
+  operatingRadiusKm   Decimal?                @db.Decimal(12, 2)
+  preferredLanesJson  Json?
+  homeTerminal        String?
+  teamDriver          Boolean                 @default(false)
+  recurringLaneRule   Json?
+  specialCapabilities Json?
+  status              TruckAvailabilityStatus @default(AVAILABLE)
+  createdAt           DateTime                @default(now())
+  updatedAt           DateTime                @updatedAt
+
+  @@index([carrierId, status, availableAt])
+  @@index([currentCity, status])
+  @@index([equipmentType, status])
+}
+
+model FreightIntelligenceRecommendation {
+  id               String    @id @default(cuid())
+  tenantId         String?
+  tenant           Tenant?   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  userId           String
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  feature          String
+  entityType       String
+  entityId         String?
+  modelName        String
+  modelVersion     String
+  dataSource       String
+  inputSnapshot    Json
+  recommendation   Json
+  confidence       Decimal   @db.Decimal(5, 2)
+  explanation      Json
+  approvalRequired Boolean   @default(true)
+  userAction       String?
+  actionedById     String?
+  actionedAt       DateTime?
+  outcome          Json?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([tenantId, feature, createdAt])
+  @@index([userId, createdAt])
+  @@index([entityType, entityId])
+}
+
+model FreightDataSource {
+  id             String    @id @default(cuid())
+  key            String    @unique
+  label          String
+  sourceType     String
+  provider       String?
+  approved       Boolean   @default(false)
+  licenseSummary String?
+  lastImportedAt DateTime?
+  metadataJson   Json?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+}
+
+enum FreightServiceStatus {
+  AVAILABLE
+  PARTNER_REQUIRED
+  COMING_SOON
+  CONFIGURATION_REQUIRED
+  DISABLED
+}
+
+enum ComplianceVerificationStatus {
+  VERIFIED
+  EXPIRING
+  INFORMATION_REQUIRED
+  REVIEW
+  RESTRICTED
+}
+
+model FreightServicePartner {
+  id                    String               @id @default(cuid())
+  tenantId              String?
+  tenant                Tenant?              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  serviceType           String
+  name                  String
+  status                FreightServiceStatus @default(PARTNER_REQUIRED)
+  providerKey           String
+  regionsJson           Json
+  eligibilityRulesJson  Json?
+  referralConfigJson    Json?
+  revenueShareBps       Int?
+  externalApiConfigured Boolean              @default(false)
+  enabled               Boolean              @default(false)
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+
+  @@unique([tenantId, serviceType, providerKey])
+  @@index([serviceType, status])
+}
+
+model FreightServiceApplication {
+  id                    String   @id @default(cuid())
+  tenantId              String?
+  tenant                Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  userId                String
+  user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  partnerId             String?
+  serviceType           String
+  transactionId         String?
+  invoiceReference      String?
+  invoiceAmountCents    Int?
+  advanceBasisPoints    Int?
+  feeCents              Int?
+  netAmountCents        Int?
+  currency              String   @default("cad")
+  status                String   @default("INFORMATION_REQUIRED")
+  externalReference     String?
+  agreementSnapshotJson Json?
+  providerPayloadJson   Json?
+  idempotencyKey        String   @unique
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([tenantId, serviceType, status])
+  @@index([userId, createdAt])
+  @@index([transactionId])
+}
+
+model CarrierComplianceRecord {
+  id                 String                       @id @default(cuid())
+  tenantId           String?
+  tenant             Tenant?                      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  carrierUserId      String
+  legalName          String
+  jurisdiction       String
+  registrationType   String
+  registrationNumber String
+  authorityStatus    ComplianceVerificationStatus @default(INFORMATION_REQUIRED)
+  operatingRegions   Json
+  equipmentJson      Json?
+  requiredDocuments  Json?
+  checklistJson      Json
+  sourceType         String                       @default("SELF_REPORTED")
+  externalReference  String?
+  lastCheckedAt      DateTime?
+  nextCheckAt        DateTime?
+  updatedById        String
+  updatedBy          User                         @relation("ComplianceRecordUpdater", fields: [updatedById], references: [id], onDelete: Restrict)
+  createdAt          DateTime                     @default(now())
+  updatedAt          DateTime                     @updatedAt
+
+  @@unique([jurisdiction, registrationType, registrationNumber])
+  @@index([carrierUserId, authorityStatus])
+  @@index([tenantId, authorityStatus])
+}
+
+model CarrierInsurancePolicy {
+  id                    String                       @id @default(cuid())
+  tenantId              String?
+  tenant                Tenant?                      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  carrierUserId         String
+  providerName          String
+  policyType            String
+  policyNumberEncrypted String
+  policyNumberLast4     String
+  effectiveDate         DateTime
+  expiryDate            DateTime
+  coverageAmountCents   Int
+  currency              String                       @default("cad")
+  documentStorageKey    String?
+  status                ComplianceVerificationStatus @default(INFORMATION_REQUIRED)
+  verifiedById          String?
+  verifiedBy            User?                        @relation("InsurancePolicyVerifier", fields: [verifiedById], references: [id], onDelete: SetNull)
+  verifiedAt            DateTime?
+  createdAt             DateTime                     @default(now())
+  updatedAt             DateTime                     @updatedAt
+
+  @@index([carrierUserId, status, expiryDate])
+  @@index([tenantId, status])
+}
+
+model FreightAssignment {
+  id           String                  @id @default(cuid())
+  loadId       String                  @unique
+  load         MarketplaceLoad         @relation(fields: [loadId], references: [id], onDelete: Cascade)
+  carrierId    String
+  truckId      String?
+  driverId     String?
+  driver       User?                   @relation("FreightAssignmentDriver", fields: [driverId], references: [id], onDelete: SetNull)
+  assignedById String
+  assignedBy   User                    @relation("FreightAssignmentAssigner", fields: [assignedById], references: [id], onDelete: Restrict)
+  status       FreightAssignmentStatus @default(ASSIGNMENT_PENDING)
+  acceptedAt   DateTime?
+  completedAt  DateTime?
+  createdAt    DateTime                @default(now())
+  updatedAt    DateTime                @updatedAt
+  events       FreightStatusEvent[]
+
+  @@index([carrierId, status])
+  @@index([driverId, status])
+}
+
+model FreightStatusEvent {
+  id           String                   @id @default(cuid())
+  assignmentId String
+  assignment   FreightAssignment        @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  actorUserId  String
+  actor        User                     @relation(fields: [actorUserId], references: [id], onDelete: Restrict)
+  fromStatus   FreightAssignmentStatus?
+  toStatus     FreightAssignmentStatus
+  note         String?
+  metadataJson Json?
+  createdAt    DateTime                 @default(now())
+
+  @@index([assignmentId, createdAt])
+}
+
+model FreightTrackingPoint {
+  id               String          @id @default(cuid())
+  loadId           String
+  load             MarketplaceLoad @relation(fields: [loadId], references: [id], onDelete: Cascade)
+  driverId         String
+  driver           User            @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  latitude         Decimal         @db.Decimal(10, 7)
+  longitude        Decimal         @db.Decimal(10, 7)
+  accuracyMeters   Int?
+  speedKph         Decimal?        @db.Decimal(8, 2)
+  headingDegrees   Int?
+  eta              DateTime?
+  capturedAt       DateTime        @default(now())
+  retentionExpires DateTime
+
+  @@index([loadId, capturedAt])
+  @@index([driverId, capturedAt])
+}
+
+model FreightGeofenceEvent {
+  id           String                   @id @default(cuid())
+  loadId       String
+  load         MarketplaceLoad          @relation(fields: [loadId], references: [id], onDelete: Cascade)
+  type         FreightGeofenceEventType
+  suggestedAt  DateTime                 @default(now())
+  confirmedAt  DateTime?
+  metadataJson Json?
+
+  @@index([loadId, suggestedAt])
+}
+
+model FreightDocument {
+  id           String                  @id @default(cuid())
+  loadId       String
+  load         MarketplaceLoad         @relation(fields: [loadId], references: [id], onDelete: Cascade)
+  uploadedById String
+  uploadedBy   User                    @relation(fields: [uploadedById], references: [id], onDelete: Restrict)
+  category     FreightDocumentCategory
+  storageKey   String
+  privateUrl   String
+  fileName     String
+  mimeType     String
+  sizeBytes    Int
+  checksum     String?
+  createdAt    DateTime                @default(now())
+
+  @@index([loadId, category, createdAt])
+  @@index([uploadedById, createdAt])
+}
+
+model FreightSavedSearch {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name          String
+  searchType    String   @default("LOAD")
+  filtersJson   Json
+  alertsEnabled Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([userId, name, searchType])
+  @@index([userId, alertsEnabled])
 }
 
 model MarketplaceBid {

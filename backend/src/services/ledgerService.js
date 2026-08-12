@@ -127,6 +127,20 @@ export async function recordRefund(db, originalTransaction, amountCents, reason,
   const existing = await db.financialTransaction.findUnique({ where: { idempotencyKey }, include: { ledgerEntries: true } });
   if (existing) return existing;
 
+  const priorRefunds = await db.financialTransaction.aggregate({
+    where: {
+      kind: 'REFUND',
+      referenceType: 'FINANCIAL_TRANSACTION',
+      referenceId: originalTransaction.id,
+      status: { in: ['AVAILABLE', 'SETTLED'] }
+    },
+    _sum: { grossCents: true }
+  });
+  const alreadyRefundedCents = priorRefunds._sum.grossCents || 0;
+  if (amountCents > originalTransaction.grossCents - alreadyRefundedCents) {
+    throw new RangeError('refund amount exceeds the remaining refundable amount');
+  }
+
   const originalCredits = originalTransaction.ledgerEntries
     .filter((item) => item.direction === 'CREDIT' && item.amountCents > 0)
     .sort((a, b) => a.amountCents - b.amountCents);
@@ -163,7 +177,7 @@ export async function recordRefund(db, originalTransaction, amountCents, reason,
 }
 
 export async function recordPayout(db, withdrawal, paymentReference) {
-  const idempotencyKey = `payout:${withdrawal.id}:${paymentReference}`;
+  const idempotencyKey = `payout:${withdrawal.id}`;
   const existing = await db.financialTransaction.findUnique({ where: { idempotencyKey }, include: { ledgerEntries: true } });
   if (existing) return existing;
   const transaction = await db.financialTransaction.create({ data: {

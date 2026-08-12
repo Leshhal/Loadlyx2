@@ -1,4 +1,5 @@
 import dotenv from 'dotenv';
+import crypto from 'crypto';
 dotenv.config();
 import { requireAuth } from './middleware/requireauth.js';
 import express from 'express';
@@ -35,6 +36,9 @@ import simulationRoutes from './routes/simulation.js';
 import aiRoutes from './routes/ai.js';
 import cryptoRoutes from './routes/crypto.js';
 import marketplaceRoutes from './routes/marketplace.js';
+import loadlyxOneRoutes from './routes/loadlyxOne.js';
+import intelligenceRoutes from './routes/intelligence.js';
+import serviceRoutes from './routes/services.js';
 import operatingSystemRoutes from './routes/operatingSystem.js';
 import passkeyRoutes from './routes/passkeys.js';
 import paymentSettingsRoutes from './routes/paymentSettings.js';
@@ -47,6 +51,7 @@ import rentalRoutes from './routes/rentals.js';
 const app = express();
 validateEnvironment();
 if (env.trustProxy) app.set('trust proxy', 1);
+app.use((req,res,next)=>{const requestId=String(req.headers['x-request-id']||crypto.randomUUID());req.requestId=requestId;res.setHeader('X-Request-ID',requestId);const started=Date.now();res.on('finish',()=>console.log(JSON.stringify({level:'info',event:'http.request',requestId,method:req.method,path:req.originalUrl,status:res.statusCode,durationMs:Date.now()-started})));next()});
 
 app.use(helmet({
   crossOriginResourcePolicy: { policy: 'cross-origin' },
@@ -138,6 +143,10 @@ app.use('/api/simulation', simulationRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/crypto', cryptoRoutes);
 app.use('/api/marketplace', marketplaceRoutes);
+app.use('/api/loadlyx-one', loadlyxOneRoutes);
+app.use('/api/loadlyx-connect', loadlyxOneRoutes);
+app.use('/api/intelligence', intelligenceRoutes);
+app.use('/api/services', serviceRoutes);
 app.use('/api/operating-system', operatingSystemRoutes);
 app.use('/api/passkeys', authLimiter, passkeyRoutes);
 ;
