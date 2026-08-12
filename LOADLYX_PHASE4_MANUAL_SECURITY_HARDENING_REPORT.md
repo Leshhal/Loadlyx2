@@ -70,6 +70,7 @@ The frontend now emits Content Security Policy, frame denial, MIME sniffing prot
 - `backend/test/ledgerService.test.js`
 - `backend/test/oauthSecurity.test.js`
 - `frontend/next.config.mjs`
+- `render.yaml`
 
 ## Production verification limits
 

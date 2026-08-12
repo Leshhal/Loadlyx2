@@ -11,7 +11,7 @@ services:
     rootDir: backend
     buildCommand: npm ci && npx prisma generate && npx prisma migrate deploy
     startCommand: npm start
-    healthCheckPath: /api/health/readiness
+    healthCheckPath: /api/health/ready
     envVars:
       - key: DATABASE_URL
         fromDatabase:
