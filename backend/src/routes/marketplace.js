@@ -45,7 +45,7 @@ router.get('/loads/:id', async (req, res, next) => {
   } catch (error) { return next(error); }
 });
 router.post('/loads', async (req, res, next) => {
-  try { if (!canPostLoad(req.user.role)) return res.status(403).json({ error: 'This account cannot post loads' }); const input = loadSchema.parse(req.body); if (input.postedForCustomer && req.user.role !== 'BROKER') return res.status(403).json({ error: 'Only brokers may post for third-party customers' }); const load = await prisma.marketplaceLoad.create({ data: { ...input, weightKg: input.weightKg ? String(input.weightKg) : null, posterId: req.user.userId, brokerId: req.user.role === 'BROKER' ? req.user.userId : null, status: 'POSTED' }, include: includeLoad }); return res.status(201).json(load); } catch (error) { return next(error); }
+  try { if (!canPostLoad(req.user.role)) return res.status(403).json({ error: 'Your account does not have permission to post loads.', code: 'LOAD_POSTING_ROLE_REQUIRED' }); const input = loadSchema.parse(req.body); if (input.postedForCustomer && req.user.role !== 'BROKER') return res.status(403).json({ error: 'Only brokers may post for third-party customers', code: 'BROKER_ROLE_REQUIRED' }); const load = await prisma.marketplaceLoad.create({ data: { ...input, weightKg: input.weightKg ? String(input.weightKg) : null, posterId: req.user.userId, brokerId: req.user.role === 'BROKER' ? req.user.userId : null, status: 'POSTED' }, include: includeLoad }); return res.status(201).json(load); } catch (error) { return next(error); }
 });
 router.post('/loads/:id/bids', async (req, res, next) => {
   try {

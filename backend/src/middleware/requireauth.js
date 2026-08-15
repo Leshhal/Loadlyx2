@@ -12,6 +12,12 @@ const PLATFORM_ROLES = ['SUPER_ADMIN', 'PLATFORM_ADMIN', 'ADMIN', 'SUPPORT'];
 const PLATFORM_WRITE_ROLES = ['SUPER_ADMIN', 'PLATFORM_ADMIN', 'ADMIN'];
 const PLATFORM_FINANCE_ROLES = ['SUPER_ADMIN', 'PLATFORM_ADMIN'];
 
+export function accountAccessFailure(current) {
+  if (!current?.isActive || current.tenant?.isActive === false) return { status: 401, body: { error: 'Account or tenant is suspended' } };
+  if (!current.emailVerifiedAt) return { status: 403, body: { error: 'Please verify your email before continuing.', code: 'EMAIL_VERIFICATION_REQUIRED' } };
+  return null;
+}
+
 export async function requireAuth(req, res, next) {
   try {
     const authHeader = req.headers.authorization;
@@ -19,8 +25,9 @@ export async function requireAuth(req, res, next) {
     const token = authHeader.split(' ')[1];
     const decoded = jwt.verify(token, env.jwtSecret);
     if (decoded.tokenType && decoded.tokenType !== 'access') return res.status(401).json({ error: 'Invalid token type' });
-    const current = await prisma.user.findUnique({ where: { id: decoded.userId }, select: { id: true, email: true, role: true, tenantId: true, isActive: true, tenant: { select: { isActive: true } } } });
-    if (!current?.isActive || current.tenant?.isActive === false) return res.status(401).json({ error: 'Account or tenant is suspended' });
+    const current = await prisma.user.findUnique({ where: { id: decoded.userId }, select: { id: true, email: true, role: true, tenantId: true, isActive: true, emailVerifiedAt: true, tenant: { select: { isActive: true } } } });
+    const accessFailure = accountAccessFailure(current);
+    if (accessFailure) return res.status(accessFailure.status).json(accessFailure.body);
     const ip = String(req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'unknown').split(',')[0].trim();
     const sessionHash = hashConnectionValue(token);
     const blocked = await prisma.securityBlock.findFirst({ where: { active: true, OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }], AND: [{ OR: [{ targetType: 'USER', userId: current.id }, { targetType: 'IP', targetValueHash: hashConnectionValue(ip) }, { targetType: 'SESSION', sessionHash }] }] } });

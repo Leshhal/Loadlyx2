@@ -18,7 +18,7 @@ import {
   signAuthResponse
 } from '../lib/auth.js';
 import { requireAuth } from '../middleware/requireauth.js';
-import { sendPasswordResetEmail, sendVerificationEmail } from '../services/emailService.js';
+import { EmailDeliveryError, emailDeliveryReadiness, sendPasswordResetEmail, sendVerificationEmail } from '../services/emailService.js';
 import { validateTenantSlug } from '../lib/tenantSlug.js';
 import { clearRefreshCookie, readCookie, setRefreshCookie } from '../lib/authCookies.js';
 import { SUBSCRIPTION_PLANS } from '../config/plans.js';
@@ -60,6 +60,9 @@ function resolveRequestedRole(role, tenantSlug) {
 async function handleSignup(req, res) {
   try {
     assertJwtSecret();
+    if (env.nodeEnv === 'production' && !emailDeliveryReadiness().configured) {
+      return res.status(503).json({ error: 'Email verification is temporarily unavailable. Please try again shortly.', code: 'EMAIL_DELIVERY_UNAVAILABLE' });
+    }
     const { fullName, password, tenantSlug, companyName, acceptedTerms } = req.body;
     const email = normalizeEmail(req.body.email);
     const role = resolveRequestedRole(req.body.role, tenantSlug);
@@ -127,6 +130,7 @@ async function handleSignup(req, res) {
     });
   } catch (error) {
     console.error('Signup error:', error);
+    if (error instanceof EmailDeliveryError) return res.status(503).json({ error: 'Email verification is temporarily unavailable. Please try again shortly.', code: error.code });
     return res.status(500).json({ error: 'Failed to create account' });
   }
 }
@@ -202,19 +206,28 @@ router.post('/forgot-password', async (req, res) => {
 });
 
 router.post('/resend-verification', async (req, res) => {
-  const email = normalizeEmail(req.body.email);
-  if (email) {
-    const user = await prisma.user.findUnique({ where: { email } });
-    if (user && !user.emailVerifiedAt && user.isActive) {
-      await prisma.authToken.updateMany({
-        where: { userId: user.id, type: 'EMAIL_VERIFICATION', consumedAt: null },
-        data: { consumedAt: new Date() }
-      });
-      const verificationToken = await createToken(user.id, 'EMAIL_VERIFICATION', EMAIL_TOKEN_MINUTES);
-      await sendVerificationEmail(user, verificationToken);
+  try {
+    if (env.nodeEnv === 'production' && !emailDeliveryReadiness().configured) {
+      return res.status(503).json({ error: 'Email verification is temporarily unavailable. Please try again shortly.', code: 'EMAIL_DELIVERY_UNAVAILABLE' });
     }
+    const email = normalizeEmail(req.body.email);
+    if (email) {
+      const user = await prisma.user.findUnique({ where: { email } });
+      if (user && !user.emailVerifiedAt && user.isActive) {
+        await prisma.authToken.updateMany({
+          where: { userId: user.id, type: 'EMAIL_VERIFICATION', consumedAt: null },
+          data: { consumedAt: new Date() }
+        });
+        const verificationToken = await createToken(user.id, 'EMAIL_VERIFICATION', EMAIL_TOKEN_MINUTES);
+        await sendVerificationEmail(user, verificationToken);
+      }
+    }
+    return res.json({ message: 'If the account requires verification, a new email has been sent.' });
+  } catch (error) {
+    console.error('Resend verification error:', error);
+    if (error instanceof EmailDeliveryError) return res.status(503).json({ error: 'Email verification is temporarily unavailable. Please try again shortly.', code: error.code });
+    return res.status(500).json({ error: 'Unable to resend verification email' });
   }
-  return res.json({ message: 'If the account requires verification, a new email has been sent.' });
 });
 
 router.get('/tenant-slug/:slug/availability', async (req, res) => {

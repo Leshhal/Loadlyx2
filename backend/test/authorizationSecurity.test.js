@@ -1,7 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { requirePlatformFinance, requirePlatformWrite } from '../src/middleware/requireauth.js';
+import { accountAccessFailure, requirePlatformFinance, requirePlatformWrite } from '../src/middleware/requireauth.js';
+
+test('protected APIs reject unverified and suspended accounts with explicit reasons', () => {
+  assert.deepEqual(accountAccessFailure({ isActive: true, emailVerifiedAt: null, tenant: null }), { status: 403, body: { error: 'Please verify your email before continuing.', code: 'EMAIL_VERIFICATION_REQUIRED' } });
+  assert.equal(accountAccessFailure({ isActive: true, emailVerifiedAt: new Date(), tenant: { isActive: true } }), null);
+  assert.equal(accountAccessFailure({ isActive: false, emailVerifiedAt: new Date(), tenant: null }).status, 401);
+  assert.equal(accountAccessFailure({ isActive: true, emailVerifiedAt: new Date(), tenant: { isActive: false } }).status, 401);
+});
 
 function invoke(middleware, role) {
   let statusCode = 200;

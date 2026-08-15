@@ -23,7 +23,15 @@ services:
         generateValue: true
       - key: FRONTEND_URL
         sync: false
+      - key: PUBLIC_APP_URL
+        sync: false
       - key: CORS_ORIGINS
+        sync: false
+      - key: EMAIL_PROVIDER
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_FROM
         sync: false
 
   - type: worker

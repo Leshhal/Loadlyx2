@@ -3,6 +3,7 @@ import { z } from 'zod';
 
 import { prisma } from '../db/prisma.js';
 import { requireAuth, requirePlatformRole, requirePlatformWrite } from '../middleware/requireauth.js';
+import { emailDeliveryReadiness } from '../services/emailService.js';
 
 const router = Router();
 router.use(requireAuth, requirePlatformRole);
@@ -71,6 +72,22 @@ router.put('/users/:id', requireWrite, async (req, res, next) => {
   } catch (error) { return next(error); }
 });
 
+router.post('/users/:id/verify-email', async (req, res, next) => {
+  try {
+    if (req.user.role !== 'SUPER_ADMIN') return res.status(403).json({ error: 'Only Super Admin may mark an email verified' });
+    const input = z.object({ reason: z.string().min(8).max(500), confirmed: z.literal(true) }).parse(req.body);
+    const before = await prisma.user.findUnique({ where: { id: req.params.id } });
+    if (!before) return res.status(404).json({ error: 'User not found' });
+    const updated = await prisma.$transaction(async (tx) => {
+      const user = before.emailVerifiedAt ? before : await tx.user.update({ where: { id: before.id }, data: { emailVerifiedAt: new Date() } });
+      await tx.auditEvent.create({ data: { actorUserId: req.user.userId, action: 'USER_EMAIL_VERIFIED_BY_SUPER_ADMIN', entityType: 'USER', entityId: user.id, tenantId: user.tenantId, beforeJson: { emailVerifiedAt: before.emailVerifiedAt }, afterJson: { emailVerifiedAt: user.emailVerifiedAt }, reason: input.reason } });
+      return user;
+    });
+    const { passwordHash, ...safeUser } = updated;
+    return res.json(safeUser);
+  } catch (error) { return next(error); }
+});
+
 router.post('/users/:id/force-logout', requireWrite, async (req, res, next) => {
   try {
     const reason = z.string().min(3).max(500).parse(req.body?.reason);
@@ -129,7 +146,7 @@ router.put('/support-tickets/:id', requirePlatformWrite, async (req, res, next) 
 router.get('/health', async (_req, res) => {
   let database = 'unavailable';
   try { await prisma.$queryRaw`SELECT 1`; database = 'available'; } catch {}
-  return res.json({ api: 'available', database, stripeConfigured: Boolean(process.env.STRIPE_SECRET_KEY), emailConfigured: Boolean(process.env.SMTP_HOST), mediaProvider: process.env.MEDIA_STORAGE_PROVIDER || 'LOCAL', timestamp: new Date().toISOString() });
+  return res.json({ api: 'available', database, stripeConfigured: Boolean(process.env.STRIPE_SECRET_KEY), emailConfigured: emailDeliveryReadiness().configured, mediaProvider: process.env.MEDIA_STORAGE_PROVIDER || 'LOCAL', timestamp: new Date().toISOString() });
 });
 
 export default router;

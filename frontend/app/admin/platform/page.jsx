@@ -2,15 +2,17 @@
 
 import { useEffect, useState } from 'react';
 import { adminFetch } from '@/lib/adminFetch';
+import { getStoredUser } from '@/lib/auth';
 import { DataTable, ErrorState, LoadingState, PageHeader, StatCard, StatusBadge } from '@/components/ui/LoadlyxUI';
 
 async function request(path, options) { const response = await adminFetch(path, options); const data = response.status === 204 ? null : await response.json(); if (!response.ok) throw new Error(data?.error || 'Request failed'); return data; }
 
 export default function PlatformAdminPage() {
-  const [summary, setSummary] = useState({}); const [users, setUsers] = useState([]); const [tenants, setTenants] = useState([]); const [flags, setFlags] = useState([]); const [health, setHealth] = useState({}); const [integrations, setIntegrations] = useState({}); const [audit, setAudit] = useState([]); const [message, setMessage] = useState(''); const [error, setError] = useState(''); const [loading, setLoading] = useState(true);
+  const [currentUser, setCurrentUser] = useState(null); const [summary, setSummary] = useState({}); const [users, setUsers] = useState([]); const [tenants, setTenants] = useState([]); const [flags, setFlags] = useState([]); const [health, setHealth] = useState({}); const [integrations, setIntegrations] = useState({}); const [audit, setAudit] = useState([]); const [message, setMessage] = useState(''); const [error, setError] = useState(''); const [loading, setLoading] = useState(true);
   async function load() { setLoading(true); setError(''); try { const [summaryData, userRows, tenantRows, flagRows, healthData, auditRows, integrationData] = await Promise.all(['/platform-admin/summary', '/platform-admin/users', '/platform-admin/tenants', '/platform-admin/feature-flags', '/platform-admin/health', '/platform-admin/audit-events', '/operating-system/admin/integrations'].map((path) => request(path))); setSummary(summaryData); setUsers(userRows); setTenants(tenantRows); setFlags(flagRows); setHealth(healthData); setAudit(Array.isArray(auditRows) ? auditRows : auditRows?.events || []); setIntegrations(integrationData); } catch (err) { setError(err.message); } finally { setLoading(false); } }
-  useEffect(() => { load(); }, []);
+  useEffect(() => { setCurrentUser(getStoredUser()); load(); }, []);
   async function changeUser(user, changes) { const reason = window.prompt('Reason for this user change:'); if (!reason) return; try { await request(`/platform-admin/users/${user.id}`, { method: 'PUT', body: JSON.stringify({ ...changes, reason }) }); setMessage('User updated and audited.'); await load(); } catch (err) { setError(err.message); } }
+  async function verifyEmail(user) { const reason = window.prompt(`Reason to mark ${user.email} verified:`); if (!reason) return; if (!window.confirm(`Confirm marking ${user.email} as verified. This is an audited recovery action.`)) return; try { await request(`/platform-admin/users/${user.id}/verify-email`, { method: 'POST', body: JSON.stringify({ reason, confirmed: true }) }); setMessage('Email marked verified and audited.'); await load(); } catch (err) { setError(err.message); } }
   async function changeTenant(tenant) { const reason = window.prompt(`Reason to ${tenant.isActive ? 'suspend' : 'activate'} this tenant:`); if (!reason) return; try { await request(`/platform-admin/tenants/${tenant.id}/status`, { method: 'PUT', body: JSON.stringify({ isActive: !tenant.isActive, reason }) }); setMessage('Tenant status updated and audited.'); await load(); } catch (err) { setError(err.message); } }
   async function toggleFlag(flag) { const reason = window.prompt(`Reason to ${flag.enabled ? 'disable' : 'enable'} ${flag.key}:`); if (!reason) return; if (!window.confirm(`Confirm ${flag.enabled ? 'disabling' : 'enabling'} ${flag.key}. This changes live platform behavior.`)) return; try { await request(`/platform-admin/feature-flags/${flag.key}`, { method: 'PUT', body: JSON.stringify({ enabled: !flag.enabled, tenantIds: flag.tenantIds || [], reason, confirmed: true }) }); setMessage('Feature flag updated and audited.'); await load(); } catch (err) { setError(err.message); } }
   const roles = ['SUPER_ADMIN','PLATFORM_ADMIN','ADMIN','SUPPORT','TENANT_ADMIN','TENANT_STAFF','MARKETPLACE_USER','BROKER','CARRIER','STAFF'];
@@ -18,8 +20,8 @@ export default function PlatformAdminPage() {
     { key: 'user', label: 'User', render: (row) => <><strong>{row.fullName || 'Unnamed'}</strong><div className="muted small">{row.email}</div></> },
     { key: 'role', label: 'Role', render: (row) => <select aria-label={`Role for ${row.email}`} value={row.role} onChange={(event) => changeUser(row, { role: event.target.value })}>{roles.map((role) => <option key={role}>{role}</option>)}</select> },
     { key: 'tenant', label: 'Tenant', render: (row) => row.tenant?.name || 'Platform / Marketplace' },
-    { key: 'status', label: 'Status', render: (row) => <StatusBadge tone={row.isActive ? 'success' : 'danger'}>{row.isActive ? 'Active' : 'Suspended'}</StatusBadge> },
-    { key: 'action', label: 'Action', render: (row) => <button className="btn secondary" onClick={() => changeUser(row, { isActive: !row.isActive })}>{row.isActive ? 'Suspend' : 'Activate'}</button> }
+    { key: 'status', label: 'Status', render: (row) => <div className="action-row"><StatusBadge tone={row.isActive ? 'success' : 'danger'}>{row.isActive ? 'Active' : 'Suspended'}</StatusBadge><StatusBadge tone={row.emailVerifiedAt ? 'success' : 'warning'}>{row.emailVerifiedAt ? 'Email verified' : 'Email unverified'}</StatusBadge></div> },
+    { key: 'action', label: 'Action', render: (row) => <div className="action-row"><button className="btn secondary" onClick={() => changeUser(row, { isActive: !row.isActive })}>{row.isActive ? 'Suspend' : 'Activate'}</button>{currentUser?.role === 'SUPER_ADMIN' && !row.emailVerifiedAt ? <button className="btn ghost" onClick={() => verifyEmail(row)}>Mark verified</button> : null}</div> }
   ];
   const tenantColumns = [
     { key: 'tenant', label: 'Tenant', render: (row) => <><strong>{row.name}</strong><div className="muted small">{row.slug}.loadlyx.com</div></> },

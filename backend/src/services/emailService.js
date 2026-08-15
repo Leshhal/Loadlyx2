@@ -1,5 +1,20 @@
 import { env } from '../config/env.js';
 
+export class EmailDeliveryError extends Error {
+  constructor(message, cause) {
+    super(message, cause ? { cause } : undefined);
+    this.name = 'EmailDeliveryError';
+    this.code = 'EMAIL_DELIVERY_UNAVAILABLE';
+    this.status = 503;
+  }
+}
+
+export function emailDeliveryReadiness(config = env) {
+  if (config.emailProvider === 'resend') return { configured: Boolean(config.resendApiKey && config.emailFrom), provider: 'resend' };
+  if (config.emailProvider === 'webhook') return { configured: Boolean(config.emailWebhookUrl), provider: 'webhook' };
+  return { configured: false, provider: config.emailProvider || 'disabled' };
+}
+
 const templates = {
   'verify-email': ({ name, actionUrl }) => ({
     subject: 'Verify your Loadlyx account',
@@ -33,25 +48,28 @@ export function renderEmailTemplate(template, variables) {
 
 async function deliver(template, recipient, variables) {
   const rendered = renderEmailTemplate(template, variables);
-  if (env.emailProvider === 'resend') {
-    const response = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: `Bearer ${env.resendApiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ from: env.emailFrom, to: [recipient], subject: rendered.subject, html: rendered.html, text: rendered.text, ...(env.emailReplyTo ? { reply_to: env.emailReplyTo } : {}) }) });
-    const body = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(`Resend delivery failed (${response.status}): ${body.message || 'provider error'}`);
-    return { delivered: true, transport: 'resend', providerId: body.id || null };
-  }
-  if (env.emailProvider === 'webhook' && env.emailWebhookUrl) {
-    const response = await fetch(env.emailWebhookUrl, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(env.emailWebhookSecret ? { Authorization: `Bearer ${env.emailWebhookSecret}` } : {}) }, body: JSON.stringify({ template, recipient, variables, message: rendered }) });
-    if (!response.ok) throw new Error(`Email provider returned ${response.status}`);
-    return { delivered: true, transport: 'webhook' };
-  }
-  if (env.emailProvider === 'disabled') {
-    if (env.nodeEnv === 'production') {
-      throw new Error('A production email provider is required');
+  try {
+    if (env.emailProvider === 'resend') {
+      const response = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: `Bearer ${env.resendApiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ from: env.emailFrom, to: [recipient], subject: rendered.subject, html: rendered.html, text: rendered.text, ...(env.emailReplyTo ? { reply_to: env.emailReplyTo } : {}) }) });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(`Resend delivery failed (${response.status}): ${body.message || 'provider error'}`);
+      return { delivered: true, transport: 'resend', providerId: body.id || null };
     }
-    console.info(`[email:development] ${template} for ${recipient}: ${variables.actionUrl}`);
-    return { delivered: false, transport: 'development-console' };
+    if (env.emailProvider === 'webhook' && env.emailWebhookUrl) {
+      const response = await fetch(env.emailWebhookUrl, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(env.emailWebhookSecret ? { Authorization: `Bearer ${env.emailWebhookSecret}` } : {}) }, body: JSON.stringify({ template, recipient, variables, message: rendered }) });
+      if (!response.ok) throw new Error(`Email provider returned ${response.status}`);
+      return { delivered: true, transport: 'webhook' };
+    }
+    if (env.emailProvider === 'disabled') {
+      if (env.nodeEnv === 'production') throw new EmailDeliveryError('Email delivery is not configured');
+      console.info(`[email:development] ${template} for ${recipient}: ${variables.actionUrl}`);
+      return { delivered: false, transport: 'development-console' };
+    }
+    throw new Error(`Unsupported email provider: ${env.emailProvider}`);
+  } catch (error) {
+    if (error instanceof EmailDeliveryError) throw error;
+    throw new EmailDeliveryError('Email delivery failed', error);
   }
-  throw new Error(`Unsupported email provider: ${env.emailProvider}`);
 }
 
 export function sendVerificationEmail(user, token) {
