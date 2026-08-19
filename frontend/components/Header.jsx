@@ -6,13 +6,12 @@ import { usePathname } from 'next/navigation';
 import ThemeToggle from './ThemeToggle';
 import { apiFetch } from '@/lib/api';
 
-const MARKETING_PATHS = new Set(['/', '/solutions', '/resources', '/pricing']);
-
 const marketingLinks = [
-  { href: '/loadboard', label: 'Loadlyx Connect' },
+  { href: '/loadboard', label: 'Loadboard' },
   { href: '/solutions', label: 'Solutions' },
-  { href: '/resources', label: 'Resources' },
-  { href: '/pricing', label: 'Pricing' }
+  { href: '/platform', label: 'Platform' },
+  { href: '/pricing', label: 'Pricing' },
+  { href: '/resources', label: 'Resources' }
 ];
 
 const appLinks = [
@@ -34,7 +33,6 @@ function getRouteMode(pathname = '/') {
   if (pathname.startsWith('/admin')) return 'admin';
   if (pathname.startsWith('/app')) return 'app';
   if (pathname.startsWith('/tenant/')) return 'tenant';
-  if (MARKETING_PATHS.has(pathname)) return 'marketing';
   return 'marketing';
 }
 
@@ -158,8 +156,8 @@ export default function Header() {
           <ThemeToggle />
           {routeMode === 'marketing' ? (
             <>
-              <Link href="/login" className="nav-link">Sign in</Link>
-              <Link href="/signup" className="btn">Start free</Link>
+              <Link href="/login" className="nav-link">Sign In</Link>
+              <Link href="/signup" className="btn">Start Free</Link>
             </>
           ) : null}
           {routeMode === 'loadboard' ? <Link href="/loadboard/login?next=/app/dashboard" className="btn">Sign in</Link> : null}

@@ -18,9 +18,9 @@ router.get('/summary', async (_req, res, next) => {
   try {
     const [users, activeUsers, tenants, activeTenants, loads, orders, openDisputes, openTickets, revenue] = await Promise.all([
       prisma.user.count(), prisma.user.count({ where: { isActive: true } }), prisma.tenant.count(), prisma.tenant.count({ where: { isActive: true } }),
-      prisma.load.count(), prisma.order.count(), prisma.dispute.count({ where: { status: { in: ['OPEN', 'UNDER_REVIEW'] } } }),
+      prisma.load.count({ where: { OR: [{ tenantId: null }, { tenant: { isDemo: false } }] } }), prisma.order.count({ where: { tenant: { isDemo: false } } }), prisma.dispute.count({ where: { status: { in: ['OPEN', 'UNDER_REVIEW'] } } }),
       prisma.supportTicket.count({ where: { status: { not: 'CLOSED' } } }),
-      prisma.ledgerEntry.aggregate({ where: { account: 'PLATFORM', direction: 'CREDIT', transaction: { status: { in: ['AVAILABLE', 'SETTLED'] } } }, _sum: { amountCents: true } })
+      prisma.ledgerEntry.aggregate({ where: { account: 'PLATFORM', direction: 'CREDIT', transaction: { status: { in: ['AVAILABLE', 'SETTLED'] }, OR: [{ tenantId: null }, { tenant: { isDemo: false } }] } }, _sum: { amountCents: true } })
     ]);
     return res.json({ users, activeUsers, tenants, activeTenants, loads, orders, openDisputes, openTickets, platformRevenueCents: revenue._sum.amountCents || 0 });
   } catch (error) { return next(error); }

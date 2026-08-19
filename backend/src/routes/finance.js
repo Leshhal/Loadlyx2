@@ -144,14 +144,15 @@ router.put('/admin/policies/:scopeKey', requireAuth, requirePlatformFinance, asy
 });
 
 router.get('/admin/summary', requireAuth, requirePlatformRole, async (_req, res) => {
+  const realTenantTransaction = { OR: [{ tenantId: null }, { tenant: { isDemo: false } }] };
   const [byKind, platformCredits, platformDebits, pendingPayouts, subscriptions, recentTransactions, withdrawalRows] = await Promise.all([
-    prisma.financialTransaction.groupBy({ by: ['kind', 'status'], _sum: { grossCents: true, platformCommissionCents: true, tenantProceedsCents: true, providerProceedsCents: true, brokerMarginCents: true } }),
-    prisma.ledgerEntry.aggregate({ where: { account: 'PLATFORM', direction: 'CREDIT' }, _sum: { amountCents: true } }),
-    prisma.ledgerEntry.aggregate({ where: { account: 'PLATFORM', direction: 'DEBIT' }, _sum: { amountCents: true } }),
-    prisma.withdrawalRequest.aggregate({ where: { status: { in: ['pending', 'approved'] } }, _sum: { amountCents: true }, _count: true }),
-    prisma.subscription.groupBy({ by: ['planCode', 'status'], _count: true, _sum: { monthlyPriceCents: true } }),
-    prisma.financialTransaction.findMany({ include: { tenant: { select: { id: true, name: true, slug: true } } }, orderBy: { createdAt: 'desc' }, take: 100 }),
-    prisma.withdrawalRequest.findMany({ include: { tenant: { select: { id: true, name: true, slug: true } } }, orderBy: { createdAt: 'desc' }, take: 100 })
+    prisma.financialTransaction.groupBy({ where: realTenantTransaction, by: ['kind', 'status'], _sum: { grossCents: true, platformCommissionCents: true, tenantProceedsCents: true, providerProceedsCents: true, brokerMarginCents: true } }),
+    prisma.ledgerEntry.aggregate({ where: { account: 'PLATFORM', direction: 'CREDIT', transaction: realTenantTransaction }, _sum: { amountCents: true } }),
+    prisma.ledgerEntry.aggregate({ where: { account: 'PLATFORM', direction: 'DEBIT', transaction: realTenantTransaction }, _sum: { amountCents: true } }),
+    prisma.withdrawalRequest.aggregate({ where: { status: { in: ['pending', 'approved'] }, tenant: { isDemo: false } }, _sum: { amountCents: true }, _count: true }),
+    prisma.subscription.groupBy({ where: { tenant: { isDemo: false } }, by: ['planCode', 'status'], _count: true, _sum: { monthlyPriceCents: true } }),
+    prisma.financialTransaction.findMany({ where: realTenantTransaction, include: { tenant: { select: { id: true, name: true, slug: true } } }, orderBy: { createdAt: 'desc' }, take: 100 }),
+    prisma.withdrawalRequest.findMany({ where: { tenant: { isDemo: false } }, include: { tenant: { select: { id: true, name: true, slug: true } } }, orderBy: { createdAt: 'desc' }, take: 100 })
   ]);
   return res.json({ platformRevenueCents: (platformCredits._sum.amountCents || 0) - (platformDebits._sum.amountCents || 0), pendingPayouts, byKind, subscriptions, recentTransactions, withdrawals: withdrawalRows });
 });

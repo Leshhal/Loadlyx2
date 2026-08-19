@@ -228,6 +228,10 @@ router.post('/checkout', async (req, res, next) => {
   });
 
   const input = schema.parse(req.body);
+  const checkoutTenant = await prisma.tenant.findUnique({ where: { id: req.tenant.id }, select: { isDemo: true } });
+  if (checkoutTenant?.isDemo) {
+    return res.status(409).json({ error: 'DEMO_CHECKOUT_DISABLED', message: 'This demo storefront does not process real payments or create financial transactions.' });
+  }
   const products = await prisma.product.findMany({
     where: {
       tenantId: req.tenant.id,

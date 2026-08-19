@@ -2,6 +2,7 @@
 import Header from '../components/Header';
 import AttributionTracker from '../components/AttributionTracker';
 import ConnectionHeartbeat from '../components/ConnectionHeartbeat';
+import MarketingFooter from '../components/MarketingFooter';
 
 export const metadata = {
   title: { default: 'Loadlyx', template: '%s | Loadlyx' },
@@ -30,6 +31,7 @@ export default function RootLayout({ children }) {
         <ConnectionHeartbeat />
         <Header />
         <div className="page-shell">{children}</div>
+        <MarketingFooter />
       </body>
     </html>
   );

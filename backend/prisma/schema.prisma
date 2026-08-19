@@ -137,6 +137,7 @@ model Tenant {
   subdomain                          String?                             @unique @db.VarChar(63)
   isActive                           Boolean                             @default(true)
   isMaster                           Boolean                             @default(false)
+  isDemo                             Boolean                             @default(false)
   subscriptionPlan                   String                              @default("free")
   brandingJson                       Json?
   email                              String?

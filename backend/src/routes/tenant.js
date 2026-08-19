@@ -13,6 +13,7 @@ slug: tenant.slug,
 subdomain: tenant.subdomain,
 primaryDomain: tenant.primaryDomain,
 subscriptionPlan: tenant.subscriptionPlan,
+isDemo: tenant.isDemo,
 branding: {
 logoUrl: branding.logoUrl || '',
 heroTitle: branding.heroTitle || '',
@@ -40,7 +41,13 @@ facebookUrl: branding.facebookUrl || '',
 instagramUrl: branding.instagramUrl || '',
 xUrl: branding.xUrl || '',
 linkedinUrl: branding.linkedinUrl || '',
-tenantPages: branding.tenantPages || []
+tenantPages: branding.tenantPages || [],
+businessType: branding.businessType || '',
+environmentLabel: tenant.isDemo ? 'DEMO' : '',
+serviceArea: branding.serviceArea || '',
+rentalTerms: branding.rentalTerms || '',
+ctaText: branding.ctaText || '',
+faq: Array.isArray(branding.faq) ? branding.faq : []
 },
 theme: tenant.themeActivation ? {
 key: tenant.themeActivation.theme.key,
