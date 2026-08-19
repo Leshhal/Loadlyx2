@@ -18,6 +18,8 @@ branding: {
 logoUrl: branding.logoUrl || '',
 heroTitle: branding.heroTitle || '',
 heroSubtitle: branding.heroSubtitle || '',
+heroHeading: branding.heroHeading || branding.heroTitle || '',
+heroDescription: branding.heroDescription || branding.heroSubtitle || '',
 primaryColor: branding.primaryColor || '',
 accentColor: branding.accentColor || '',
 promoBanner: branding.promoBanner || '',
