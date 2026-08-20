@@ -4,7 +4,9 @@ const RESERVED_SUBDOMAINS = [
 'admin',
 'api',
 'loadlyx',
-'localhost'
+'localhost',
+'loads',
+'loadboard'
 ];
 
 export function tenantSlugFromPath(pathname = '') {

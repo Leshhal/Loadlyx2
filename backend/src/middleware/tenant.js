@@ -20,7 +20,7 @@ return hostname.replace('.loadlyx.com', '');
 return null;
 }
 
-const RESERVED_HOSTS = new Set(['www', 'admin', 'api', 'app', 'support', 'loadlyx', 'loads']);
+const RESERVED_HOSTS = new Set(['www', 'admin', 'api', 'app', 'support', 'loadlyx', 'loads', 'loadboard']);
 
 export async function tenantMiddleware(req, res, next) {
 try {

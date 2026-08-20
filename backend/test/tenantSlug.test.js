@@ -14,6 +14,11 @@ test('rejects reserved tenant slugs', () => {
   });
 });
 
+test('reserves public platform hostnames from tenant signup', () => {
+  assert.equal(validateTenantSlug('loadboard').ok, false);
+  assert.equal(validateTenantSlug('loads').ok, false);
+});
+
 test('accepts a valid tenant slug', () => {
   assert.deepEqual(validateTenantSlug('Cansask Moving'), {
     ok: true,

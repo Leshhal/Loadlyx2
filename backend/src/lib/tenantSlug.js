@@ -1,7 +1,7 @@
 export const RESERVED_TENANT_SLUGS = new Set([
   'www', 'admin', 'api', 'app', 'support', 'help', 'mail', 'billing',
   'marketplace', 'store', 'dashboard', 'auth', 'login', 'signup',
-  'static', 'assets', 'loadlyx', 'localhost'
+  'static', 'assets', 'loadlyx', 'localhost', 'loads', 'loadboard'
 ]);
 
 export function normalizeTenantSlug(value = '') {

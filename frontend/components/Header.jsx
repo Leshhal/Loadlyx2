@@ -44,7 +44,7 @@ export default function Header() {
 
   useEffect(() => {
     const hostname = window.location.hostname;
-    setLoadboardHost(hostname === 'loads.localhost' || hostname === 'loads.loadlyx.local' || hostname.startsWith('loads.'));
+    setLoadboardHost(hostname === 'loadboard.localhost' || hostname === 'loadboard.loadlyx.local' || hostname.startsWith('loadboard.') || hostname === 'loads.localhost' || hostname === 'loads.loadlyx.local' || hostname.startsWith('loads.'));
   }, []);
 
   const routeMode = useMemo(() => loadboardHost ? 'loadboard' : getRouteMode(pathname), [loadboardHost, pathname]);
