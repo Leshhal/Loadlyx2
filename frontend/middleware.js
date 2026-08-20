@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { canonicalLoadboardPath, hostnameFromHostHeader, isLoadboardHostname, resolveTenantFromHostname, tenantPathParts } from './lib/tenantHost';
 
-const PASSTHROUGH_PREFIXES = ['/_next', '/api', '/favicon'];
+const PASSTHROUGH_PREFIXES = ['/_next', '/api', '/favicon', '/store-assets'];
 const passthrough = (pathname) => PASSTHROUGH_PREFIXES.some((prefix) => pathname.startsWith(prefix));
 
 function redirectTo(request, hostname, pathname) {
