@@ -9,6 +9,8 @@ const router = Router();
 router.use(requireAuth, requirePlatformRole);
 
 const WRITE_ROLES = new Set(['SUPER_ADMIN', 'PLATFORM_ADMIN', 'ADMIN']);
+export const nonDemoTenantWhere = { tenant: { isDemo: false } };
+
 function requireWrite(req, res, next) {
   if (!WRITE_ROLES.has(req.user.role)) return res.status(403).json({ error: 'Support access is read-only' });
   next();
@@ -18,7 +20,7 @@ router.get('/summary', async (_req, res, next) => {
   try {
     const [users, activeUsers, tenants, activeTenants, loads, orders, openDisputes, openTickets, revenue] = await Promise.all([
       prisma.user.count(), prisma.user.count({ where: { isActive: true } }), prisma.tenant.count(), prisma.tenant.count({ where: { isActive: true } }),
-      prisma.load.count({ where: { OR: [{ tenantId: null }, { tenant: { isDemo: false } }] } }), prisma.order.count({ where: { tenant: { isDemo: false } } }), prisma.dispute.count({ where: { status: { in: ['OPEN', 'UNDER_REVIEW'] } } }),
+      prisma.load.count({ where: nonDemoTenantWhere }), prisma.order.count({ where: nonDemoTenantWhere }), prisma.dispute.count({ where: { status: { in: ['OPEN', 'UNDER_REVIEW'] } } }),
       prisma.supportTicket.count({ where: { status: { not: 'CLOSED' } } }),
       prisma.ledgerEntry.aggregate({ where: { account: 'PLATFORM', direction: 'CREDIT', transaction: { status: { in: ['AVAILABLE', 'SETTLED'] }, OR: [{ tenantId: null }, { tenant: { isDemo: false } }] } }, _sum: { amountCents: true } })
     ]);
