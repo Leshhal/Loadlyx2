@@ -228,9 +228,15 @@ router.post('/checkout', async (req, res, next) => {
   });
 
   const input = schema.parse(req.body);
-  const checkoutTenant = await prisma.tenant.findUnique({ where: { id: req.tenant.id }, select: { isDemo: true } });
+  const checkoutTenant = await prisma.tenant.findUnique({ where: { id: req.tenant.id }, select: { isDemo: true, brandingJson: true } });
   if (checkoutTenant?.isDemo) {
     return res.status(409).json({ error: 'DEMO_CHECKOUT_DISABLED', message: 'This demo storefront does not process real payments or create financial transactions.' });
+  }
+  const paymentSettings = checkoutTenant?.brandingJson?.paymentSettings || {};
+  if (input.paymentMethod === 'STRIPE' && !stripe) return res.status(503).json({ error: 'Card checkout is not configured' });
+  if (input.paymentMethod === 'PAYPAL') {
+    if (!process.env.PAYPAL_CLIENT_ID || !process.env.PAYPAL_CLIENT_SECRET) return res.status(503).json({ error: 'PayPal checkout is not configured' });
+    if (!paymentSettings.paypalMerchantId) return res.status(409).json({ error: 'PayPal is not connected for this tenant' });
   }
   const products = await prisma.product.findMany({
     where: {
@@ -292,17 +298,8 @@ router.post('/checkout', async (req, res, next) => {
     include: { items: true }
   });
 
-  if (!stripe) {
-    return res.status(201).json({
-      order,
-      shipping,
-      checkoutMode: 'stripe-disabled',
-      message: 'Stripe secret key not configured yet. Order saved locally.'
-    });
-  }
 
-  const tenantRecord = await prisma.tenant.findUnique({ where: { id: req.tenant.id }, select: { brandingJson: true } });
-  const paymentSettings = tenantRecord?.brandingJson?.paymentSettings || {};
+
   const commissionPolicy = await getCommissionPolicy(prisma, req.tenant.id);
   const applicationFeeCents = Math.round((subtotalCents * commissionPolicy.storeCommissionBps) / 10000);
   if (input.paymentMethod === 'PAYPAL') {

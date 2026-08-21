@@ -1,240 +1,83 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { storefrontPaymentMethodState } from '@/lib/storePaymentMethods';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api';
+const TERMINAL_CRYPTO = new Set(['PAID', 'OVERPAID', 'EXPIRED', 'FAILED', 'REFUNDED']);
+
+
 
 export default function CheckoutFlow({ product, tenantSlug, initialQty }) {
-const [step, setStep] = useState('summary');
-const [quantity, setQuantity] = useState(Number(initialQty || 1));
+  const [step, setStep] = useState('summary');
+  const [quantity, setQuantity] = useState(Math.max(1, Number(initialQty || 1)));
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [country, setCountry] = useState('CA');
+  const [province, setProvince] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [paymentMethods, setPaymentMethods] = useState(null);
+  const [paymentMethod, setPaymentMethod] = useState('card');
+  const [cryptoAsset, setCryptoAsset] = useState('ADA');
+  const [cryptoInvoice, setCryptoInvoice] = useState(null);
+  const priceCents = Number(product.priceCents || Math.round(Number(product.price || 0) * 100));
+  const subtotalCents = priceCents * quantity;
+  const availability = useMemo(() => ({ card: storefrontPaymentMethodState(paymentMethods, 'card'), paypal: storefrontPaymentMethodState(paymentMethods, 'paypal'), crypto: storefrontPaymentMethodState(paymentMethods, 'crypto') }), [paymentMethods]);
 
-const priceCents = Number(product.priceCents || Math.round(Number(product.price || 0) * 100));
-const subtotalCents = priceCents * quantity;
-const [name, setName] = useState('');
-const [email, setEmail] = useState('');
-const [address, setAddress] = useState('');
-const [city, setCity] = useState('');
-const [postalCode, setPostalCode] =useState('');
-const [country, setCountry] = useState('Canada');
-const [province, setProvince] = useState('');
-const [error, setError] = useState('');
-const [paymentMethod, setPaymentMethod] = useState('card');
-const [cryptoAsset, setCryptoAsset] = useState('USDC');
-const [cryptoInvoice, setCryptoInvoice] = useState(null);
+  useEffect(() => {
+    fetch(`${API_URL}/orders/payment-methods`, { headers: { 'x-tenant-slug': tenantSlug } })
+      .then(async (response) => { const body = await response.json(); if (!response.ok) throw new Error(body.error); return body; })
+      .then((methods) => { setPaymentMethods(methods); const crypto = storefrontPaymentMethodState(methods, 'crypto'); if (crypto.assets?.length) setCryptoAsset(crypto.assets[0]); })
+      .catch(() => setPaymentMethods({ card: { status: 'CONFIGURATION REQUIRED' }, paypal: { status: 'CONFIGURATION REQUIRED' }, crypto: { status: 'DISABLED', acceptedAssets: [] } }));
+  }, [tenantSlug]);
 
-useEffect(() => {
-if (!cryptoInvoice?.id || ['PAID','OVERPAID','EXPIRED','FAILED','REFUNDED'].includes(cryptoInvoice.status)) return undefined;
-const timer = window.setInterval(async () => {
-const response = await fetch(`${API_URL}/crypto/invoices/${cryptoInvoice.id}`);
-if (response.ok) setCryptoInvoice(await response.json());
-}, 5000);
-return () => window.clearInterval(timer);
-}, [cryptoInvoice]);
+  useEffect(() => {
+    if (!cryptoInvoice?.id || TERMINAL_CRYPTO.has(cryptoInvoice.status)) return undefined;
+    const timer = window.setInterval(async () => { const response = await fetch(`${API_URL}/crypto/invoices/${cryptoInvoice.id}`); if (response.ok) setCryptoInvoice(await response.json()); }, 5000);
+    return () => window.clearInterval(timer);
+  }, [cryptoInvoice]);
 
-const handleCheckout = async () => {
-setError('');
-const res = await fetch(`${API_URL}/checkout/create-session`, {
-method: 'POST',
-headers: {
-'Content-Type': 'application/json',
-'x-tenant-slug': tenantSlug
-},
-body: JSON.stringify({
-productSlug: product.slug,
-quantity,
-name,
-email,
-country,
-province,
-address,
-city,
-postalCode
-})
-});
+  async function handleProviderCheckout() {
+    setError(''); setLoading(true);
+    try {
+      const response = await fetch(`${API_URL}/orders/checkout`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-tenant-slug': tenantSlug }, body: JSON.stringify({ customerName: name, customerEmail: email, shippingCountry: country, shippingProvince: country === 'CA' ? province : undefined, shippingState: country === 'US' ? province : undefined, paymentMethod: paymentMethod === 'paypal' ? 'PAYPAL' : 'STRIPE', items: [{ productId: product.id, quantity }] }) });
+      const body = await response.json();
+      if (!response.ok || !body.checkoutUrl) throw new Error(body.message || body.error || 'Payment checkout could not be started');
+      window.location.href = body.checkoutUrl;
+    } catch (checkoutError) { setError(checkoutError.message); setLoading(false); }
+  }
 
-const data = await res.json();
+  async function handleCryptoCheckout() {
+    setError(''); setLoading(true);
+    try {
+      const response = await fetch(`${API_URL}/crypto/invoices`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-tenant-slug': tenantSlug }, body: JSON.stringify({ productSlug: product.slug, quantity, asset: cryptoAsset, name, email, country, province }) });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error || 'Crypto invoice could not be created');
+      setCryptoInvoice(body);
+    } catch (checkoutError) { setError(checkoutError.message); } finally { setLoading(false); }
+  }
 
-if (!res.ok || !data.url) return setError(data.error || 'Stripe checkout URL was not returned');
-window.location.href = data.url;
-};
-
-const handleCryptoCheckout = async () => {
-setError('');
-const res = await fetch(`${API_URL}/crypto/invoices`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-tenant-slug': tenantSlug }, body: JSON.stringify({ productSlug: product.slug, quantity, asset: cryptoAsset, name, email, country: country === 'Canada' ? 'CA' : 'US', province, address, city, postalCode }) });
-const data = await res.json();
-if (!res.ok) return setError(data.error || 'Crypto invoice could not be created');
-setCryptoInvoice(data);
-};
-
-return (
-<>
-{error ? <p style={{ color: '#b91c1c' }}>{error}</p> : null}
-{step === 'summary' ? (
-<>
-<div style={styles.item}>
-<div>
-<h2 style={styles.productName}>{product.name}</h2>
-
-<label style={styles.label}>Quantity</label>
-<input
-type="number"
-min="1"
-value={quantity}
-onChange={(e) => setQuantity(Math.max(1, Number(e.target.value || 1)))}
-style={styles.input}
-/>
-
-<p style={styles.meta}>Price: ${(priceCents / 100).toFixed(2)}</p>
-</div>
-
-<strong style={styles.total}>${(subtotalCents / 100).toFixed(2)}</strong>
-</div>
-
-<button type="button" style={styles.button} onClick={() => setStep('payment')}>
-Continue to Payment
-</button>
-</>
-) : (
-<>
-{cryptoInvoice ? <section style={styles.cryptoInvoice}><span style={styles.cryptoBadge}>{cryptoInvoice.status}</span><h2>Send {Number(cryptoInvoice.cryptoAmount).toFixed(8)} {cryptoInvoice.asset}</h2><p style={styles.address}>{cryptoInvoice.paymentAddress}</p><p>Confirmations: {cryptoInvoice.confirmations} / {cryptoInvoice.requiredConfirmations}</p><p>Invoice expires {new Date(cryptoInvoice.expiresAt).toLocaleString()}.</p><p style={styles.meta}>Order fulfilment begins only after the required confirmations are reached.</p></section> : <>
-<div style={styles.form}>
-<label style={styles.label}>Full Name</label>
-<input
-style={styles.input}
-value={name}
-onChange={(e) => setName(e.target.value)}
-/>
-
-<label style={styles.label}>Email Address</label>
-<input
-type="email"
-style={styles.input}
-value={email}
-onChange={(e) => setEmail(e.target.value)}
-/>
-
-<label style={styles.label}>Shipping Country</label>
-<select style={styles.input} value={country} onChange={(e) => setCountry(e.target.value)}>
-<option>Canada</option>
-<option>United States</option>
-</select>
-<label style={styles.label}>Street Address</label>
-<input
-style={styles.input}
-placeholder="Enter Shipping Street Address"
-value={address}
-onChange={(e) => setAddress(e.target.value)}
-/>
-<label style={styles.label}>City</label>
-<input
-style={styles.input}
-placeholder="Enter Shipping City"
-value={city}
-onChange={(e) => setCity(e.target.value)}
-/>
-
-<label style={styles.label}>Postal Code</label>
-<input
-style={styles.input}
-placeholder="X0X 0X0"
-value={postalCode}
-onChange={(e) => setPostalCode(e.target.value)}
-/>
-<label style={styles.label}>Province</label>
-<input
-placeholder="SK / AB / ON"
-style={styles.input}
-value={province}
-onChange={(e) => setProvince(e.target.value)}
-/>
-
-<label style={styles.label}>Payment method</label>
-<select style={styles.input} value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)}><option value="card">Credit or debit card</option><option value="crypto">Cryptocurrency</option></select>
-{paymentMethod === 'crypto' ? <><label style={styles.label}>Crypto asset</label><select style={styles.input} value={cryptoAsset} onChange={(e) => setCryptoAsset(e.target.value)}>{['BTC','ETH','SOL','ADA','USDC','USDT'].map((asset) => <option key={asset}>{asset}</option>)}</select></> : null}
-
-</div>
-
-<button
-type="button"
-style={styles.button}
-onClick={paymentMethod === 'crypto' ? handleCryptoCheckout : handleCheckout}
->
-{paymentMethod === 'crypto' ? 'Create Crypto Invoice' : `Pay $${(subtotalCents / 100).toFixed(2)}`}
-</button>
-
-<button type="button" style={styles.secondaryButton} onClick={() => setStep('summary')}>
-Back
-</button>
-</>}
-</>
-)}
-</>
-);
+  const selected = availability[paymentMethod];
+  return <>
+    {error ? <p className="error" role="alert">{error}</p> : null}
+    {step === 'summary' ? <><div style={styles.item}><div><h2 style={styles.productName}>{product.name}</h2><label style={styles.label}>Quantity</label><input type="number" min="1" value={quantity} onChange={(event) => setQuantity(Math.max(1, Number(event.target.value || 1)))} style={styles.input} /><p style={styles.meta}>Price: ${(priceCents / 100).toFixed(2)}</p></div><strong style={styles.total}>${(subtotalCents / 100).toFixed(2)}</strong></div><button type="button" className="tenant-pay-button" onClick={() => setStep('payment')}>Continue to payment</button></> : cryptoInvoice ? <section style={styles.cryptoInvoice}><span style={styles.cryptoBadge}>{cryptoInvoice.status}</span><h2>Send {Number(cryptoInvoice.cryptoAmount).toFixed(8)} {cryptoInvoice.asset}</h2><p style={styles.address}>{cryptoInvoice.paymentAddress}</p><p>Confirmations: {cryptoInvoice.confirmations} / {cryptoInvoice.requiredConfirmations}</p><p>Invoice expires {new Date(cryptoInvoice.expiresAt).toLocaleString()}.</p><p style={styles.meta}>Fulfilment begins only after the verified listener records the required confirmations.</p></section> : <>
+      <div style={styles.form}><label style={styles.label}>Full name<input required style={styles.input} value={name} onChange={(event) => setName(event.target.value)} /></label><label style={styles.label}>Email address<input required type="email" style={styles.input} value={email} onChange={(event) => setEmail(event.target.value)} /></label><label style={styles.label}>Shipping country<select style={styles.input} value={country} onChange={(event) => setCountry(event.target.value)}><option value="CA">Canada</option><option value="US">United States</option></select></label><label style={styles.label}>{country === 'CA' ? 'Province' : 'State'}<input required style={styles.input} value={province} onChange={(event) => setProvince(event.target.value)} placeholder={country === 'CA' ? 'SK / AB / ON' : 'State'} /></label></div>
+      <fieldset className="tenant-payment-methods"><legend>Choose how to pay</legend>{[
+        ['card', 'Credit / debit card', 'Stripe'],
+        ['paypal', 'PayPal', 'PayPal balance or eligible card'],
+        ['crypto', 'Cryptocurrency', 'ADA or SOL']
+      ].map(([key, title, provider]) => <label key={key} className={paymentMethod === key ? 'selected' : ''}><input type="radio" name="paymentMethod" value={key} checked={paymentMethod === key} disabled={!availability[key].enabled} onChange={() => setPaymentMethod(key)} /><span><strong>{title}</strong><small>{provider} · {availability[key].note}</small></span></label>)}</fieldset>
+      {paymentMethod === 'crypto' && availability.crypto.assets?.length ? <label style={styles.label}>Blockchain<select style={styles.input} value={cryptoAsset} onChange={(event) => setCryptoAsset(event.target.value)}>{availability.crypto.assets.map((asset) => <option key={asset}>{asset}</option>)}</select></label> : null}
+      <button type="button" className="tenant-pay-button" disabled={loading || !selected?.enabled || !name || !email || !province} onClick={paymentMethod === 'crypto' ? handleCryptoCheckout : handleProviderCheckout}>{loading ? 'Starting secure checkout…' : paymentMethod === 'paypal' ? 'Continue to PayPal' : paymentMethod === 'crypto' ? `Create ${cryptoAsset} payment invoice` : `Pay $${(subtotalCents / 100).toFixed(2)} with card`}</button>
+      <button type="button" className="tenant-back-button" onClick={() => setStep('summary')}>Back</button>
+    </>}
+  </>;
 }
 
 const styles = {
-item: {
-marginTop: 24,
-padding: 20,
-borderRadius: 18,
-background: '#f8fafc',
-display: 'flex',
-justifyContent: 'space-between',
-gap: 20
-},
-productName: {
-margin: 0,
-color: '#0f172a'
-},
-meta: {
-margin: '10px 0 0',
-color: '#64748b'
-},
-total: {
-fontSize: 24,
-color: '#0f172a'
-},
-form: {
-marginTop: 24,
-display: 'grid',
-gap: 12
-},
-label: {
-fontWeight: 800,
-color: '#334155',
-marginTop: 12
-},
-input: {
-padding: '13px 14px',
-borderRadius: 12,
-border: '1px solid rgba(15,23,42,0.14)',
-fontSize: 16
-},
-button: {
-marginTop: 24,
-width: '100%',
-background: 'linear-gradient(135deg,#2563eb,#1d4ed8)',
-color: '#fff',
-border: 'none',
-borderRadius: 16,
-padding: '16px 22px',
-fontSize: 16,
-fontWeight: 900,
-cursor: 'pointer'
-},
-secondaryButton: {
-marginTop: 12,
-width: '100%',
-background: '#fff',
-color: '#0f172a',
-border: '1px solid rgba(15,23,42,0.12)',
-borderRadius: 16,
-padding: '14px 22px',
-fontSize: 16,
-fontWeight: 900,
-cursor: 'pointer'
-},
-cryptoInvoice: { marginTop: 24, padding: 24, borderRadius: 18, background: '#f8fafc', color: '#0f172a' },
-cryptoBadge: { display: 'inline-block', padding: '6px 10px', borderRadius: 999, background: '#dbeafe', color: '#1d4ed8', fontWeight: 800 },
-address: { overflowWrap: 'anywhere', padding: 12, borderRadius: 10, background: '#e2e8f0', fontFamily: 'monospace' }
+  item: { marginTop: 24, padding: 20, borderRadius: 18, background: '#f8fafc', display: 'flex', justifyContent: 'space-between', gap: 20 },
+  productName: { margin: 0, color: '#0f172a' }, meta: { margin: '10px 0 0', color: '#64748b' }, total: { fontSize: 24, color: '#0f172a' },
+  form: { marginTop: 24, display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))', gap: 14 }, label: { display: 'grid', gap: 8, fontWeight: 800, color: '#334155' }, input: { width: '100%', padding: '13px 14px', borderRadius: 12, border: '1px solid rgba(15,23,42,.14)', fontSize: 16, boxSizing: 'border-box' },
+  cryptoInvoice: { marginTop: 24, padding: 24, borderRadius: 18, background: '#f8fafc', color: '#0f172a' }, cryptoBadge: { display: 'inline-block', padding: '6px 10px', borderRadius: 999, background: '#dbeafe', color: '#1d4ed8', fontWeight: 800 }, address: { overflowWrap: 'anywhere', padding: 12, borderRadius: 10, background: '#e2e8f0', fontFamily: 'monospace' }
 };

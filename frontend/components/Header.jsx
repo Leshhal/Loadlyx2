@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import ThemeToggle from './ThemeToggle';
 import { apiFetch } from '@/lib/api';
+import { resolveTenantFromHostname } from '@/lib/tenantHost';
 
 const marketingLinks = [
   { href: '/loadboard', label: 'Loadboard' },
@@ -41,18 +42,23 @@ export default function Header() {
   const [tenantProfile, setTenantProfile] = useState(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [loadboardHost, setLoadboardHost] = useState(false);
+  const [tenantHostSlug, setTenantHostSlug] = useState(null);
+  const [hostResolved, setHostResolved] = useState(false);
 
   useEffect(() => {
     const hostname = window.location.hostname;
     setLoadboardHost(hostname === 'loadboard.localhost' || hostname === 'loadboard.loadlyx.local' || hostname.startsWith('loadboard.') || hostname === 'loads.localhost' || hostname === 'loads.loadlyx.local' || hostname.startsWith('loads.'));
+    setTenantHostSlug(resolveTenantFromHostname(hostname, { rootDomain: process.env.NEXT_PUBLIC_ROOT_DOMAIN || 'loadlyx.com' }));
+    setHostResolved(true);
   }, []);
 
-  const routeMode = useMemo(() => loadboardHost ? 'loadboard' : getRouteMode(pathname), [loadboardHost, pathname]);
+  const routeMode = useMemo(() => loadboardHost ? 'loadboard' : tenantHostSlug ? 'tenant' : getRouteMode(pathname), [loadboardHost, pathname, tenantHostSlug]);
   const tenantSlug = useMemo(() => {
     if (routeMode !== 'tenant') return null;
+    if (tenantHostSlug) return tenantHostSlug;
     const [, , slug] = pathname.split('/');
     return slug || null;
-  }, [routeMode, pathname]);
+  }, [routeMode, pathname, tenantHostSlug]);
 
   useEffect(() => {
     let cancelled = false;
@@ -124,7 +130,7 @@ export default function Header() {
   const loadboardAuthPath = pathname.startsWith('/loadboard/login') || pathname.startsWith('/loadboard/signup') || (loadboardHost && ['/login', '/signup'].includes(pathname));
   // Tenant storefront pages render tenant-owned navigation. Rendering the
   // platform header here creates a duplicate header and leaks SaaS branding.
-  if (routeMode === 'admin' || routeMode === 'app' || routeMode === 'tenant' || loadboardAuthPath) return null;
+  if (!hostResolved || routeMode === 'admin' || routeMode === 'app' || routeMode === 'tenant' || loadboardAuthPath) return null;
 
   return (
     <header className="header">
