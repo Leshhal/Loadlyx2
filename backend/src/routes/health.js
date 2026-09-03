@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { prisma } from '../db/prisma.js';
-import { providerConfigurationStatus } from '../services/providerStatus.js';
+import { freightOsHealthCompatibility, providerConfigurationStatus } from '../services/providerStatus.js';
 
 const router = Router();
 router.get('/', (req, res) => {
@@ -23,7 +23,8 @@ router.get('/providers', async (_req, res) => {
       prisma.backgroundJob.count({ where: { status: { in: ['QUEUED','RETRY_SCHEDULED'] } } }),
       prisma.backgroundJob.count({ where: { status: 'RUNNING' } })
     ]);
-    return res.json({ database: 'available', worker: { queue: 'postgres-durable', queued, running }, providers: providerConfigurationStatus(), freightServices: partners, timestamp: new Date().toISOString() });
+    const providers = providerConfigurationStatus();
+    return res.json({ database: 'available', worker: { queue: 'postgres-durable', queued, running }, providers, ...freightOsHealthCompatibility(providers), freightServices: partners, timestamp: new Date().toISOString() });
   } catch { return res.status(503).json({ database: 'unavailable', timestamp: new Date().toISOString() }); }
 });
 
