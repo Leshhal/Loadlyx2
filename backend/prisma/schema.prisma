@@ -138,6 +138,9 @@ model Tenant {
   isActive                           Boolean                             @default(true)
   isMaster                           Boolean                             @default(false)
   isDemo                             Boolean                             @default(false)
+  stripePolicy                       StripeTenantPolicy                  @default(DISABLED)
+  stripeEnabled                      Boolean                             @default(false)
+  paypalEnabled                      Boolean                             @default(false)
   subscriptionPlan                   String                              @default("free")
   brandingJson                       Json?
   email                              String?
@@ -210,6 +213,13 @@ enum MediaStorageProvider {
   CLOUDINARY
   S3
   SUPABASE
+}
+
+enum StripeTenantPolicy {
+  PLATFORM_STRIPE_ALLOWED
+  OWN_STRIPE
+  STRIPE_CONNECT
+  DISABLED
 }
 
 enum ReviewTargetType {

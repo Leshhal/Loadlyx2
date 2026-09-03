@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { calculateShipping } from '../utils/shipping.js';
 import { recordRefund } from '../services/ledgerService.js';
 import { capturePaypalOrder, createPaypalOrder, refundPaypalCapture } from '../services/paypalService.js';
+import { paypalAvailability, stripeAvailability } from '../services/tenantPaymentPolicy.js';
 
 const router = Router();
 const stripe = env.stripeSecretKey ? new Stripe(env.stripeSecretKey) : null;
@@ -15,13 +16,15 @@ const stripe = env.stripeSecretKey ? new Stripe(env.stripeSecretKey) : null;
 router.get('/payment-methods', async (req, res) => {
   if (!req.tenant?.id) return res.status(404).json({ error: 'Tenant storefront not found' });
   const [tenant, cryptoSettings] = await Promise.all([
-    prisma.tenant.findUnique({ where: { id: req.tenant.id }, select: { brandingJson: true } }),
+    prisma.tenant.findUnique({ where: { id: req.tenant.id }, select: { isDemo: true, stripePolicy: true, stripeEnabled: true, paypalEnabled: true, brandingJson: true } }),
     prisma.cryptoPaymentSettings.findUnique({ where: { tenantId: req.tenant.id } })
   ]);
   const settings = tenant?.brandingJson?.paymentSettings || {};
+  const card = stripeAvailability(tenant, env.stripeSecretKey);
+  const paypal = paypalAvailability(tenant, { configured: Boolean(process.env.PAYPAL_CLIENT_ID && process.env.PAYPAL_CLIENT_SECRET), mode: process.env.PAYPAL_MODE || 'SANDBOX', merchantId: settings.paypalMerchantId });
   return res.json({
-    card: { status: !stripe ? 'CONFIGURATION REQUIRED' : env.stripeSecretKey.startsWith('sk_live_') ? 'CONFIGURED' : 'SANDBOX', provider: 'STRIPE', tenantConnected: Boolean(settings.stripeAccountId), liveVerified: false },
-    paypal: { status: process.env.PAYPAL_CLIENT_ID && process.env.PAYPAL_CLIENT_SECRET && settings.paypalMerchantId ? (process.env.PAYPAL_MODE === 'LIVE' ? 'CONFIGURED' : 'SANDBOX') : 'CONFIGURATION REQUIRED', provider: 'PAYPAL', liveVerified: false },
+    card: { ...card, provider: 'STRIPE', tenantConnected: Boolean(settings.stripeAccountId), policy: tenant?.stripePolicy || 'DISABLED', liveVerified: false },
+    paypal: { ...paypal, provider: 'PAYPAL', liveVerified: false },
     crypto: { status: cryptoSettings?.enabled ? (cryptoSettings.provider === 'MOCK' ? 'MOCK' : 'EXTERNAL_VERIFICATION_REQUIRED') : 'DISABLED', provider: cryptoSettings?.provider || 'MOCK', acceptedAssets: cryptoSettings?.acceptedAssets || [] }
   });
 });
@@ -228,16 +231,15 @@ router.post('/checkout', async (req, res, next) => {
   });
 
   const input = schema.parse(req.body);
-  const checkoutTenant = await prisma.tenant.findUnique({ where: { id: req.tenant.id }, select: { isDemo: true, brandingJson: true } });
+  const checkoutTenant = await prisma.tenant.findUnique({ where: { id: req.tenant.id }, select: { isDemo: true, stripePolicy: true, stripeEnabled: true, paypalEnabled: true, brandingJson: true } });
   if (checkoutTenant?.isDemo) {
     return res.status(409).json({ error: 'DEMO_CHECKOUT_DISABLED', message: 'This demo storefront does not process real payments or create financial transactions.' });
   }
   const paymentSettings = checkoutTenant?.brandingJson?.paymentSettings || {};
-  if (input.paymentMethod === 'STRIPE' && !stripe) return res.status(503).json({ error: 'Card checkout is not configured' });
-  if (input.paymentMethod === 'PAYPAL') {
-    if (!process.env.PAYPAL_CLIENT_ID || !process.env.PAYPAL_CLIENT_SECRET) return res.status(503).json({ error: 'PayPal checkout is not configured' });
-    if (!paymentSettings.paypalMerchantId) return res.status(409).json({ error: 'PayPal is not connected for this tenant' });
-  }
+  const card = stripeAvailability(checkoutTenant, env.stripeSecretKey);
+  const paypal = paypalAvailability(checkoutTenant, { configured: Boolean(process.env.PAYPAL_CLIENT_ID && process.env.PAYPAL_CLIENT_SECRET), mode: process.env.PAYPAL_MODE || 'SANDBOX', merchantId: paymentSettings.paypalMerchantId });
+  if (input.paymentMethod === 'STRIPE' && (!stripe || !card.available)) return res.status(409).json({ error: 'Card payments are temporarily unavailable. Please choose another payment method.' });
+  if (input.paymentMethod === 'PAYPAL' && !paypal.available) return res.status(409).json({ error: 'PayPal is currently unavailable.' });
   const products = await prisma.product.findMany({
     where: {
       tenantId: req.tenant.id,
@@ -303,7 +305,6 @@ router.post('/checkout', async (req, res, next) => {
   const commissionPolicy = await getCommissionPolicy(prisma, req.tenant.id);
   const applicationFeeCents = Math.round((subtotalCents * commissionPolicy.storeCommissionBps) / 10000);
   if (input.paymentMethod === 'PAYPAL') {
-    if (!paymentSettings.paypalMerchantId) return res.status(409).json({ error: 'PayPal is not connected for this tenant' });
     const origin = checkoutOrigin(req);
     const paypalOrder = await createPaypalOrder({ orderId: order.id, totalCents, currency: env.stripeCurrency, returnUrl: `${origin}/checkout/paypal?order_id=${order.id}`, cancelUrl: `${origin}/checkout/cancel`, payeeMerchantId: paymentSettings.paypalMerchantId });
     await prisma.order.update({ where: { id: order.id }, data: { paypalOrderId: paypalOrder.id } });

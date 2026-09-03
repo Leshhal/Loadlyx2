@@ -3,6 +3,7 @@ import Stripe from 'stripe';
 import { z } from 'zod';
 import { env } from '../config/env.js';
 import { prisma } from '../db/prisma.js';
+import { paypalAvailability, stripeAvailability } from '../services/tenantPaymentPolicy.js';
 
 const router = Router();
 const stripe = env.stripeSecretKey ? new Stripe(env.stripeSecretKey) : null;
@@ -56,26 +57,33 @@ router.get('/', async (req, res) => {
     } });
   }
   const tenantId = tenantRequired(req, res); if (!tenantId) return;
-  const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { brandingJson: true } });
+  const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { isDemo: true, stripePolicy: true, stripeEnabled: true, paypalEnabled: true, brandingJson: true } });
   const settings = await refreshStripeState(tenantId, tenant);
-  return res.json({ scope: 'TENANT', settings: publicSettings({ paymentSettings: settings }), stripeAvailable: Boolean(stripe), paypalMode: process.env.PAYPAL_CLIENT_ID && process.env.PAYPAL_CLIENT_SECRET ? 'partner-configuration-required' : 'configuration-required' });
+  const stripeState = stripeAvailability(tenant, env.stripeSecretKey);
+  const paypalState = paypalAvailability(tenant, { configured: Boolean(process.env.PAYPAL_CLIENT_ID && process.env.PAYPAL_CLIENT_SECRET), mode: process.env.PAYPAL_MODE || 'SANDBOX', merchantId: settings.paypalMerchantId });
+  return res.json({ scope: 'TENANT', settings: { ...publicSettings({ paymentSettings: settings }), stripePolicy: tenant.stripePolicy, stripeEnabled: tenant.stripeEnabled, paypalEnabled: tenant.paypalEnabled }, stripe: stripeState, paypal: paypalState });
 });
 
 router.put('/', async (req, res) => {
   const tenantId = tenantRequired(req, res); if (!tenantId) return;
-  const input = z.object({ paypalMerchantId: z.string().trim().max(160).optional(), payoutMethod: z.enum(['STRIPE', 'PAYPAL', 'MANUAL']).optional(), payoutDestinationLabel: z.string().trim().max(160).optional() }).parse(req.body);
-  const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { brandingJson: true } });
+  const input = z.object({ stripeEnabled: z.boolean().optional(), paypalEnabled: z.boolean().optional(), paypalMerchantId: z.string().trim().max(160).optional(), payoutMethod: z.enum(['STRIPE', 'PAYPAL', 'MANUAL']).optional(), payoutDestinationLabel: z.string().trim().max(160).optional() }).parse(req.body);
+  const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { isDemo: true, stripePolicy: true, brandingJson: true } });
+  if (tenant?.isDemo && (input.stripeEnabled || input.paypalEnabled)) return res.status(409).json({ error: 'Demo tenants cannot enable real payment providers' });
+  if (input.stripeEnabled && tenant?.stripePolicy !== 'PLATFORM_STRIPE_ALLOWED') return res.status(403).json({ error: 'This tenant is not authorized to use the platform Stripe account' });
   const branding = tenant?.brandingJson && typeof tenant.brandingJson === 'object' ? tenant.brandingJson : {};
   const current = branding.paymentSettings && typeof branding.paymentSettings === 'object' ? branding.paymentSettings : {};
-  const updated = { ...current, ...input };
-  await prisma.tenant.update({ where: { id: tenantId }, data: { brandingJson: { ...branding, paymentSettings: updated } } });
-  return res.json({ settings: publicSettings({ paymentSettings: updated }) });
+  const { stripeEnabled, paypalEnabled, ...paymentInput } = input;
+  const updated = { ...current, ...paymentInput };
+  const saved = await prisma.tenant.update({ where: { id: tenantId }, data: { brandingJson: { ...branding, paymentSettings: updated }, ...(stripeEnabled === undefined ? {} : { stripeEnabled }), ...(paypalEnabled === undefined ? {} : { paypalEnabled }) }, select: { stripeEnabled: true, paypalEnabled: true } });
+  return res.json({ settings: { ...publicSettings({ paymentSettings: updated }), ...saved } });
 });
 
 router.post('/stripe/onboarding', async (req, res) => {
   const tenantId = tenantRequired(req, res); if (!tenantId) return;
   if (!stripe) return res.status(503).json({ error: 'The platform Stripe account is not configured yet' });
-  const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { name: true, email: true, brandingJson: true } });
+  const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { name: true, email: true, stripePolicy: true, brandingJson: true } });
+  if (tenant?.stripePolicy === 'PLATFORM_STRIPE_ALLOWED') return res.status(409).json({ error: 'This tenant uses the platform Stripe account and does not require Connect onboarding' });
+  if (tenant?.stripePolicy !== 'STRIPE_CONNECT') return res.status(403).json({ error: 'Stripe Connect is not enabled for this tenant' });
   const branding = tenant?.brandingJson && typeof tenant.brandingJson === 'object' ? tenant.brandingJson : {};
   const current = branding.paymentSettings && typeof branding.paymentSettings === 'object' ? branding.paymentSettings : {};
   const accountId = current.stripeAccountId || (await stripe.accounts.create({ type: 'express', email: tenant?.email || undefined, business_profile: { name: tenant?.name || undefined }, metadata: { tenantId } })).id;
