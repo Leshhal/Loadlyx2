@@ -1,8 +1,9 @@
 const PLATFORM_STRIPE_ALLOWED = 'PLATFORM_STRIPE_ALLOWED';
 
 export function stripeProviderMode(secret = '') {
-  if (!secret) return 'CONFIGURATION REQUIRED';
-  return secret.startsWith('sk_live_') ? 'LIVE' : 'TEST';
+  const normalized = String(secret).trim();
+  if (!normalized) return 'CONFIGURATION REQUIRED';
+  return normalized.startsWith('sk_live_') ? 'LIVE' : 'TEST';
 }
 
 export function stripeAvailability(tenant, secret = '') {

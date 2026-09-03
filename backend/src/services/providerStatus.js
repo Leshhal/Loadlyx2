@@ -4,6 +4,22 @@ import { oauthReadiness } from './oauthService.js';
 import { paypalReadiness } from './paypalService.js';
 
 function configuredState(configured, label = 'CONFIGURED') { return configured ? label : 'CONFIGURATION REQUIRED'; }
+
+export function stripeCredentialDiagnostics(raw = '') {
+  const value = String(raw).trim();
+  let credentialFormat = 'MISSING';
+  if (value.startsWith('sk_live_')) credentialFormat = 'LIVE_SECRET';
+  else if (value.startsWith('sk_test_')) credentialFormat = 'TEST_SECRET';
+  else if (value.startsWith('rk_live_')) credentialFormat = 'RESTRICTED_LIVE';
+  else if (value.startsWith('rk_test_')) credentialFormat = 'RESTRICTED_TEST';
+  else if (value) credentialFormat = 'UNKNOWN';
+  return {
+    credentialFormat,
+    hasOuterWhitespace: Boolean(raw && raw !== value),
+    hasLiteralEscapes: value.includes('\\_'),
+    hasQuotes: /^[\"']/.test(value)
+  };
+}
 export function providerConfigurationStatus() {
   const oauth = Object.fromEntries(['google','apple','discord'].map((provider) => { const state = oauthReadiness(provider); return [provider, { status: configuredState(state.configured), configured: state.configured, missing: state.missing, liveVerified: false }]; }));
   const fallbackOrigin = env.publicAppUrl || 'http://localhost:3000';
@@ -12,7 +28,7 @@ export function providerConfigurationStatus() {
   const passkeysConfigured = env.nodeEnv !== 'production' || (rpId !== 'localhost' && origins.every((origin) => origin.startsWith('https://')));
   const paypal = paypalReadiness();
   const emailConfigured = env.emailProvider === 'resend' ? Boolean(env.resendApiKey && env.emailFrom) : env.emailProvider === 'webhook' ? Boolean(env.emailWebhookUrl) : false;
-  return { authentication: { ...oauth, passkeys: { status: configuredState(passkeysConfigured), rpId, origins, liveVerified: false } }, email: { provider: env.emailProvider.toUpperCase(), status: configuredState(emailConfigured), configured: emailConfigured, deliveryVerified: false, domainVerification: 'OWNER VERIFICATION REQUIRED' }, payments: { stripe: { status: env.stripeSecretKey ? (env.stripeSecretKey.startsWith('sk_live_') ? 'CONFIGURED' : 'SANDBOX') : 'CONFIGURATION REQUIRED', configured: Boolean(env.stripeSecretKey), webhookConfigured: Boolean(env.stripeWebhookSecret), liveVerified: false }, paypal: { status: paypal.configured ? (paypal.mode === 'LIVE' ? 'CONFIGURED' : 'SANDBOX') : 'CONFIGURATION REQUIRED', configured: paypal.configured, webhookConfigured: paypal.webhookConfigured, mode: paypal.mode, liveVerified: false } }, crypto: { chains: chainSupportMatrix(), listener: { status: process.env.CRYPTO_LISTENER_ENABLED === 'true' ? 'CONFIGURED' : 'CONFIGURATION REQUIRED', configured: process.env.CRYPTO_LISTENER_ENABLED === 'true', liveVerified: false }, withdrawals: { status: 'CONFIGURATION REQUIRED', reason: 'Secure signing and custody are not configured' } }, infrastructure: { database: 'RUNTIME CHECK REQUIRED', queue: 'POSTGRES_DURABLE_QUEUE', emailWorker: env.emailProvider === 'disabled' ? 'DISABLED' : 'CONFIGURED' } };
+  return { authentication: { ...oauth, passkeys: { status: configuredState(passkeysConfigured), rpId, origins, liveVerified: false } }, email: { provider: env.emailProvider.toUpperCase(), status: configuredState(emailConfigured), configured: emailConfigured, deliveryVerified: false, domainVerification: 'OWNER VERIFICATION REQUIRED' }, payments: { stripe: { status: env.stripeSecretKey ? (env.stripeSecretKey.startsWith('sk_live_') ? 'CONFIGURED' : 'SANDBOX') : 'CONFIGURATION REQUIRED', configured: Boolean(env.stripeSecretKey), webhookConfigured: Boolean(env.stripeWebhookSecret), liveVerified: false, ...stripeCredentialDiagnostics(process.env.STRIPE_SECRET_KEY || '') }, paypal: { status: paypal.configured ? (paypal.mode === 'LIVE' ? 'CONFIGURED' : 'SANDBOX') : 'CONFIGURATION REQUIRED', configured: paypal.configured, webhookConfigured: paypal.webhookConfigured, mode: paypal.mode, liveVerified: false } }, crypto: { chains: chainSupportMatrix(), listener: { status: process.env.CRYPTO_LISTENER_ENABLED === 'true' ? 'CONFIGURED' : 'CONFIGURATION REQUIRED', configured: process.env.CRYPTO_LISTENER_ENABLED === 'true', liveVerified: false }, withdrawals: { status: 'CONFIGURATION REQUIRED', reason: 'Secure signing and custody are not configured' } }, infrastructure: { database: 'RUNTIME CHECK REQUIRED', queue: 'POSTGRES_DURABLE_QUEUE', emailWorker: env.emailProvider === 'disabled' ? 'DISABLED' : 'CONFIGURED' } };
 }
 
 export function freightOsHealthCompatibility(status = {}) {
