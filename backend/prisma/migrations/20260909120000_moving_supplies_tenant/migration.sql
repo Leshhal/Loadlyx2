@@ -7,7 +7,7 @@ BEGIN
   SELECT count(*) INTO yxe_count FROM "Tenant" WHERE slug='yxetotes';
   IF yxe_count <> 1 THEN RAISE EXCEPTION 'PRODUCT TENANT MIGRATION SAFETY BLOCKED: YXE Totes tenant missing or duplicated'; END IF;
   SELECT count(*) INTO unexpected FROM "Product" p LEFT JOIN "Category" c ON c.id=p."categoryId"
-    WHERE p."tenantId"=cansask_id AND (c.slug IS NULL OR c.slug NOT IN ('moving-boxes','moving-supplies','bike-racks-hitch-accessories','vehicle-wiring'));
+    WHERE p."tenantId"=cansask_id AND (c.slug IS NULL OR c.slug NOT IN ('moving-boxes','moving-supplies','hitch-accessories','vehicle-wiring'));
   IF unexpected <> 0 THEN RAISE EXCEPTION 'PRODUCT TENANT MIGRATION SAFETY BLOCKED: % Can-Sask products are outside approved retail categories', unexpected; END IF;
 END $$;
 
