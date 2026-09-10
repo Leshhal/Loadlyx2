@@ -4,6 +4,7 @@ import { getTenantSlug as resolveTenantSlug } from '@/lib/tenant';
 import { useEffect, useMemo, useState } from 'react';
 import { apiFetch } from '../../lib/api';
 import { getAttributionData } from '../../lib/attribution';
+import { storefrontPaymentMethodState } from '../../lib/storePaymentMethods';
 
 function getTenantSlug() {
 return resolveTenantSlug ();
@@ -39,13 +40,14 @@ const [paymentMethod, setPaymentMethod] = useState('STRIPE');
 
 useEffect(() => {
 setCart(loadCart());
-apiFetch('/orders/payment-methods').then(setPaymentMethods).catch(() => setPaymentMethods(null));
+apiFetch('/orders/payment-methods').then((methods) => { setPaymentMethods(methods); const card = storefrontPaymentMethodState(methods, 'card'); const paypal = storefrontPaymentMethodState(methods, 'paypal'); if (!card.enabled && paypal.enabled) setPaymentMethod('PAYPAL'); }).catch(() => setPaymentMethods(null));
 }, []);
 
 const subtotal = useMemo(
 () => cart.reduce((sum, item) => sum + item.product.priceCents * item.quantity, 0),
 [cart]
 );
+const availability = useMemo(() => ({ card: storefrontPaymentMethodState(paymentMethods, 'card'), paypal: storefrontPaymentMethodState(paymentMethods, 'paypal') }), [paymentMethods]);
 
 useEffect(() => {
 if (!cart.length) return;
@@ -163,9 +165,9 @@ ${((item.product.priceCents * item.quantity) / 100).toFixed(2)}
 </div>
 
 <div className="card">
-{paymentMethods ? <div className="grid" style={{ gap: 10, marginBottom: 18 }}><strong>Payment options for this store</strong><div className="action-row"><span className="badge">Card: {paymentMethods.card.status}</span><span className="badge">PayPal: {paymentMethods.paypal.status}</span><span className="badge">Crypto: {paymentMethods.crypto.status}</span></div>{paymentMethods.crypto.status === 'MOCK' ? <p className="muted small">Crypto is in test-only mock mode and cannot collect real funds.</p> : null}</div> : null}
+{paymentMethods ? <div className="grid" style={{ gap: 10, marginBottom: 18 }}><strong>Choose a payment method</strong><div className="payment-availability"><span className={`badge ${availability.card.enabled ? 'available' : 'unavailable'}`}>Card · {availability.card.enabled ? 'Available' : availability.card.note}</span><span className={`badge ${availability.paypal.enabled ? 'available' : 'unavailable'}`}>PayPal · {availability.paypal.enabled ? 'Available' : availability.paypal.note}</span></div></div> : <p className="muted small">Checking available payment methods…</p>}
 <form className="grid" style={{ gap: 14 }} onSubmit={submitCheckout}>
-<div className="field"><label>Payment method</label><select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)}><option value="STRIPE" disabled={paymentMethods?.card?.status === 'DISABLED'}>Credit or debit card</option><option value="PAYPAL" disabled={['DISABLED','CONFIGURATION REQUIRED'].includes(paymentMethods?.paypal?.status)}>PayPal</option></select></div>
+<div className="field"><label>Payment method</label><select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)}><option value="STRIPE" disabled={!availability.card.enabled}>Credit or debit card</option><option value="PAYPAL" disabled={!availability.paypal.enabled}>PayPal</option></select></div>
 <div className="field">
 <label>Full Name</label>
 <input
@@ -234,12 +236,12 @@ placeholder="ND / WA / TX"
 </div>
 )}
 
-<button className="btn" type="submit" disabled={loading || !cart.length}>
+<button className="btn" type="submit" disabled={loading || !cart.length || (paymentMethod === 'STRIPE' ? !availability.card.enabled : !availability.paypal.enabled)}>
 {loading ? 'Starting checkout…' : `Pay $${(subtotal / 100).toFixed(2)}+`}
 </button>
 
 <div className="muted small">
-Secure 256-bit encryption · Stripe hosted checkout · weight-based shipping logic
+Secure payment processing · Shipping confirmed before payment
 </div>
 
 {message ? <p className="success">{message}</p> : null}

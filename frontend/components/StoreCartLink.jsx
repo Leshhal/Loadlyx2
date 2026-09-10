@@ -17,5 +17,5 @@ export default function StoreCartLink({ tenantSlug }) {
     window.addEventListener('loadlyx:cart-updated', update);
     return () => { window.removeEventListener('storage', update); window.removeEventListener('loadlyx:cart-updated', update); };
   }, [tenantSlug]);
-  return <Link className="tenant-cart-link" href={`/tenant/${tenantSlug}/catalog`} aria-label={`Cart with ${count} items`}>Cart{count ? ` (${count})` : ''}</Link>;
+  return <Link className="tenant-cart-link" href={`/tenant/${tenantSlug}/checkout?cart=1`} aria-label={`Cart with ${count} items`}>Cart{count ? ` (${count})` : ''}</Link>;
 }

@@ -59,7 +59,7 @@ export default function TenantProductDetail({ product, tenantSlug }) {
         <label className="field" style={{ maxWidth: 150 }}>Quantity<input type="number" min="1" max={Math.max(1, availableStock)} value={quantity} onChange={(event) => setQuantity(Math.max(1, Number(event.target.value) || 1))} /></label>
         <div className="action-row"><button className="btn" type="button" disabled={availableStock < 1} onClick={() => addToCart(false)}>Add to cart</button><button className="btn secondary" type="button" disabled={availableStock < 1} onClick={() => addToCart(true)}>Buy now</button><Link className="text-link" href={`/tenant/${tenantSlug}/checkout?cart=1`}>Open cart checkout</Link></div>
         {message ? <p className="success" role="status">{message}</p> : null}
-        <div className="tenant-trust-banner"><strong>Tenant-owned storefront</strong><span className="muted">Payment and fulfilment options are confirmed during checkout.</span></div>
+        <div className="tenant-trust-banner"><strong>Secure online ordering</strong><span className="muted">Payment, shipping, and final totals are confirmed before purchase.</span></div>
       </div>
     </section>
   </main>;

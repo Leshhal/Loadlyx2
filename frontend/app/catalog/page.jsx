@@ -158,7 +158,7 @@ function CatalogPageContent() {
   return (
     <main className="container grid lx-storefront" style={{ gap: 24 }}>
       <section className="lx-store-hero">
-        <div><span className="lx-eyebrow">Moving supplies, connected to the move</span><h1>{branding.brandName || tenantProfile?.name || 'The Loadlyx Store'}</h1><p>Shop protection, packing, and moving essentials from a tenant storefront designed to work alongside quotes, bookings, and delivery.</p><div className="lx-store-search"><span aria-hidden="true">⌕</span><input type="search" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search products and moving supplies" aria-label="Search storefront products" /></div><div className="lx-trust-row"><span>✓ Tenant storefront</span><span>✓ Secure checkout</span><span>✓ Inventory-aware</span><button type="button" className="btn ghost" onClick={() => setCartOpen(true)}>Cart ({cart.reduce((sum, item) => sum + item.quantity, 0)})</button></div></div>
+        <div><span className="lx-eyebrow">Moving supplies, connected to the move</span><h1>{branding.brandName || tenantProfile?.name || 'The Loadlyx Store'}</h1><p>Shop dependable packing, protection, and moving essentials with secure checkout and delivery options.</p><div className="lx-store-search"><span aria-hidden="true">⌕</span><input type="search" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search products and moving supplies" aria-label="Search storefront products" /></div><div className="lx-trust-row"><span>✓ Secure checkout</span><span>✓ In-stock products</span><span>✓ Clear pricing</span><button type="button" className="btn ghost" onClick={() => setCartOpen(true)}>Cart ({cart.reduce((sum, item) => sum + item.quantity, 0)})</button></div></div>
         <aside className="lx-concierge-card"><span className="lx-eyebrow">Move-kit concierge</span><h2>Not sure what your move needs?</h2><p>Start with the move details already supported by Loadlyx. Your quote can guide a coordinated supply plan without guessing through the catalog.</p><Link className="btn" href={`${tenantBase}/quote`}>Describe your move</Link><small>Recommendations require review before products are added.</small></aside>
       </section>
       <section className="catalog-layout">
@@ -223,7 +223,7 @@ function CatalogPageContent() {
             {branding.trustHeadline ? (
               <div className="tenant-trust-banner">
                 <strong>{branding.trustHeadline}</strong>
-                <span className="muted">{branding.trustCopy || 'Branded tenant messaging appears here for customer confidence.'}</span>
+                <span className="muted">{branding.trustCopy || 'Helpful details for a confident purchase.'}</span>
               </div>
             ) : null}
 
@@ -282,52 +282,7 @@ function CatalogPageContent() {
             </div>
           </section>
 
-          <section className="card checkout-card">
-            <div className="panel-header">
-              <div>
-                <span className="badge">Secure Cart</span>
-                <h2 style={{ margin: '10px 0 0' }}>Checkout Preview</h2>
-              </div>
-              <div className="badge badge-gold">Stripe-ready</div>
-            </div>
 
-            {!cart.length ? <p className="muted">Your cart is empty. Add products to start checkout.</p> : (
-              <>
-                <div className="stack-sm">
-                  {cart.map((item) => (
-                    <div className="summary-line" key={item.productId}>
-                      <div>
-                        <strong>{item.product.name}</strong>
-                        <div className="muted small">Qty {item.quantity}</div>
-                      </div>
-                      <div style={{ textAlign: 'right' }}>
-                        <div>${((item.product.priceCents * item.quantity) / 100).toFixed(2)}</div>
-                        <button onClick={() => removeFromCart(item.productId)} className="btn ghost" style={{ padding: '8px 10px', marginTop: 8 }}>Remove</button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="summary-line" style={{ marginTop: 18 }}>
-                  <span className="muted">Subtotal</span>
-                  <span>${(subtotal / 100).toFixed(2)}</span>
-                </div>
-                <div className="summary-line">
-                  <span className="muted">Shipping</span>
-                  <span>{qualifiesForFreeShipping ? 'Free shipping unlocked' : shippingPreview}</span>
-                </div>
-                <div className="total-line">
-                  <span>Total</span>
-                  <span>${(subtotal / 100).toFixed(2)}+</span>
-                </div>
-
-                <div className="action-row" style={{ marginTop: 18 }}>
-                  <button className="btn" onClick={startCheckout}>Continue to Secure Checkout</button>
-                  <Link className="btn secondary" href={`${tenantBase}/quote`}>Need a move quote?</Link>
-                </div>
-              </>
-            )}
-          </section>
         </div>
       </section>
       <Drawer open={Boolean(quickView)} title={quickView?.name} description={quickView?.category?.name || 'Product details'} onClose={() => setQuickView(null)} footer={quickView ? <><Link className="btn secondary" href={tenantSlug ? `${tenantBase}/catalog/${quickView.slug}` : `/products/${quickView.slug}`}>Full details</Link><button className="btn" type="button" onClick={() => { addToCart(quickView); setQuickView(null); }}>Add to cart</button></> : null}>{quickView ? <div className="grid" style={{ gap: 18 }}>{quickView.primaryImage?.url ? <img className="lx-quick-image" src={quickView.primaryImage.url} alt={quickView.primaryImage.altText || quickView.name} /> : null}<strong className="price">${(quickView.priceCents / 100).toFixed(2)}</strong><p className="muted">{quickView.description}</p><div className="lx-detail-grid"><div><span>Stock</span><strong>{quickView.stock ?? 'Not listed'}</strong></div><div><span>Weight</span><strong>{Number(quickView.weightKg || 0).toFixed(2)} kg</strong></div></div></div> : null}</Drawer>

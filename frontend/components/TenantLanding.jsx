@@ -12,7 +12,7 @@ export default function TenantLanding({ tenant }) {
     fontFamily: themeTokens.fontFamily === 'serif' ? 'Georgia, serif' : undefined
   };
   const heroTitle = branding.heroTitle || `${tenant?.name || 'Tenant'} moving store and booking hub`;
-  const heroSubtitle = branding.heroSubtitle || 'Book moving support, shop supplies, and start a quote from one branded tenant experience.';
+  const heroSubtitle = branding.heroSubtitle || 'Book services, shop products, and request a quote in one simple experience.';
   const serviceHeading = branding.serviceHeading || 'Tenant Storefront';
   const promoBanner = branding.promoBanner || 'Fast quotes, secure checkout, and logistics-ready storefront.';
   const showPromoBanner = Boolean(branding.promoBannerEnabled && promoBanner);
@@ -27,7 +27,7 @@ export default function TenantLanding({ tenant }) {
           <div className="stack-sm">
             <span className="badge">{serviceHeading}</span>
             {branding.logoUrl ? <img src={branding.logoUrl} alt={tenant?.name} className="tenant-landing-logo" /> : null}
-            <div className="hero-kicker">{tenant?.name || 'Tenant storefront'}</div>
+            <div className="hero-kicker">{tenant?.name || 'Welcome'}</div>
             <h1 className="hero-title">{heroTitle}</h1>
             <p className="lead">{heroSubtitle}</p>
           </div>
@@ -83,7 +83,7 @@ export default function TenantLanding({ tenant }) {
       <section className="grid grid-3">
         <div className="card">
           <span className="badge">Branding</span>
-          <h3>Tenant-owned experience</h3>
+          <h3>Made for your business</h3>
           <p className="muted">Logos, color tones, promotions, messaging, and catalog presentation can be customized per tenant.</p>
           <Link className="btn secondary" href={`/tenant/${tenant.slug || tenant.subdomain}/catalog`}>Browse Catalog</Link>
         </div>

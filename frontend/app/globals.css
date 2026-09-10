@@ -963,3 +963,38 @@ body { background: var(--lx-bg); color: var(--lx-text); }
 .tenant-payment-methods label{background:var(--store-raised);border-color:var(--store-border)}.tenant-payment-methods small{color:var(--store-muted)}
 .tenant-back-button{background:var(--store-raised);color:var(--store-text);border-color:var(--store-border)}
 .tenant-product-detail-image img{object-fit:contain!important;background:#fff}
+
+/* Loadlyx default dark commerce theme */
+:root{--loadlyx-default-bg:#050b18;--loadlyx-default-panel:#0b1428;--loadlyx-default-raised:#101d38;--loadlyx-default-border:#243352;--loadlyx-default-text:#f8fafc;--loadlyx-default-muted:#9eabc3;--loadlyx-default-blue:#3167e3;--loadlyx-default-blue-hover:#4177f0}
+.tenant-store{background:radial-gradient(circle at 50% -10%,#15244a 0,transparent 32%),var(--loadlyx-default-bg);color:var(--loadlyx-default-text)}
+.tenant-store-header{background:rgba(5,11,24,.94);border-color:var(--loadlyx-default-border)}
+.tenant-store-header nav a,.tenant-store-actions a{color:#d7e1f5}
+.tenant-cart-link{background:var(--loadlyx-default-blue);box-shadow:0 8px 26px rgba(49,103,227,.28)}
+.tenant-store-shell{max-width:1440px}
+.tenant-store .lx-storefront{color:var(--loadlyx-default-text)}
+.tenant-store .lx-store-hero{position:relative;isolation:isolate;min-height:390px;overflow:hidden;background:#071126;border-color:var(--loadlyx-default-border)}
+.tenant-store[data-business-type="MOVING_SUPPLIES"] .lx-store-hero{background-image:linear-gradient(90deg,rgba(3,8,20,.96) 0%,rgba(3,8,20,.78) 45%,rgba(3,8,20,.12) 100%),url('/store-assets/hero-moving-supplies.webp');background-size:cover;background-position:center}
+.tenant-store[data-business-type="TOTE_RENTAL"] .lx-store-hero{background-image:linear-gradient(90deg,rgba(3,8,20,.96) 0%,rgba(3,8,20,.74) 48%,rgba(3,8,20,.1) 100%),url('/store-assets/hero-yxe-totes.webp');background-size:cover;background-position:center}
+.tenant-store .lx-store-hero>div,.tenant-store .lx-concierge-card{position:relative;z-index:1}
+.tenant-store .lx-store-hero h1{color:#fff;text-shadow:0 3px 22px rgba(0,0,0,.45)}
+.tenant-store .lx-store-hero>div>p{color:#d3dced}
+.tenant-store .lx-store-search{background:rgba(5,11,24,.82);border-color:#3c4e72}.tenant-store .lx-store-search input{color:#fff}
+.tenant-store .lx-trust-row{color:#d7e1f5}
+.tenant-store .lx-concierge-card,.tenant-store .card,.tenant-store .filter-panel,.tenant-store .product-card{background:linear-gradient(145deg,var(--loadlyx-default-raised),var(--loadlyx-default-panel));border-color:var(--loadlyx-default-border);color:var(--loadlyx-default-text);box-shadow:0 18px 55px rgba(0,0,0,.25)}
+.tenant-store .filter-panel{position:sticky;top:102px;align-self:start}
+.tenant-store .filter-list button{color:#d7e1f5;background:#0a1327;border-color:var(--loadlyx-default-border)}
+.tenant-store .filter-list button:hover,.tenant-store .filter-list button.active{background:var(--loadlyx-default-blue);color:#fff}
+.tenant-store .product-card{overflow:hidden}.tenant-store .product-image{background:#fff}.tenant-store .product-image img,.tenant-store .tenant-product-media img{object-fit:contain}
+.tenant-store .product-card h2,.tenant-store .product-card h3,.tenant-store .product-card strong,.tenant-store .page-title{color:#fff}
+.tenant-store .checkout-grid{display:grid;grid-template-columns:minmax(0,1.08fr) minmax(360px,.92fr);gap:20px;align-items:start;max-width:1160px;margin:20px auto}
+.tenant-store .checkout-grid>.card{border:1px solid var(--loadlyx-default-border);background:linear-gradient(145deg,var(--loadlyx-default-raised),var(--loadlyx-default-panel))}
+.tenant-store .summary-line{border-color:var(--loadlyx-default-border)}
+.tenant-store .total-line{background:#081126;border:1px solid var(--loadlyx-default-border);border-radius:12px;padding:16px;color:#fff}
+.tenant-store .checkout-grid input,.tenant-store .checkout-grid select{background:#071126;color:#fff;border-color:#314365}
+.tenant-store .checkout-grid .btn{width:100%;min-height:52px;background:linear-gradient(180deg,#3f73e8,#2554bd);font-size:1rem}
+.tenant-store .checkout-grid .badge{background:#15264b;color:#dce7ff;border-color:#30466f}
+.lx-freight-hero{background-image:linear-gradient(90deg,rgba(3,8,20,.98) 0%,rgba(3,8,20,.8) 45%,rgba(3,8,20,.16) 100%),url('/store-assets/hero-loadboard.webp');background-size:cover;background-position:center}
+.lx-freight-hero-grid{grid-template-columns:minmax(0,760px) 1fr}.lx-freight-visual{visibility:hidden}.lx-freight-hero h1{text-shadow:0 4px 28px rgba(0,0,0,.62)}
+.tenant-store-hero>img{object-position:center}.tenant-store[data-business-type="MOVING_SUPPLIES"] .tenant-store-hero>img,.tenant-store[data-business-type="TOTE_RENTAL"] .tenant-store-hero>img{object-position:center}
+@media(max-width:900px){.tenant-store .checkout-grid{grid-template-columns:1fr}.tenant-store .filter-panel{position:static}.lx-freight-hero-grid{grid-template-columns:1fr}.lx-freight-visual{display:none}.lx-freight-hero{background-position:62% center}}
+@media(max-width:620px){.tenant-store .lx-store-hero{min-height:440px;padding:22px;background-position:62% center}.tenant-store .lx-concierge-card{display:none}.tenant-store .catalog-layout{grid-template-columns:1fr}.tenant-store .filter-panel{position:static}.tenant-store .checkout-grid{margin-top:0}.tenant-store .checkout-grid>.card{padding:20px}.lx-freight-hero{background-position:70% center}.lx-freight-hero-copy{background:linear-gradient(90deg,rgba(3,8,20,.86),rgba(3,8,20,.28));padding:20px 16px 36px;border-radius:18px}}
