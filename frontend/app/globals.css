@@ -947,3 +947,19 @@ body { background: var(--lx-bg); color: var(--lx-text); }
 .tenant-payment-methods{display:grid;gap:10px;margin:24px 0;padding:0;border:0}.tenant-payment-methods legend{font-weight:900;margin-bottom:10px}.tenant-payment-methods label{display:flex;align-items:center;gap:13px;padding:15px;border:1px solid #d8ddd9;background:#fff;cursor:pointer}.tenant-payment-methods label.selected{border-color:var(--store-primary);box-shadow:0 0 0 2px color-mix(in srgb,var(--store-primary) 18%,transparent)}.tenant-payment-methods label:has(input:disabled){opacity:.58;cursor:not-allowed}.tenant-payment-methods span{display:grid;gap:3px}.tenant-payment-methods small{color:#6b756f}.tenant-pay-button,.tenant-back-button{width:100%;margin-top:14px;padding:16px 22px;border:0;font-weight:900;cursor:pointer}.tenant-pay-button{background:var(--store-primary);color:#fff}.tenant-pay-button:disabled{opacity:.55;cursor:not-allowed}.tenant-back-button{background:#fff;color:#17211d;border:1px solid #d8ddd9}
 @media(min-width:800px){.tenant-product-detail{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.tenant-product-detail-image{aspect-ratio:1/1}}
 @media(max-width:620px){.tenant-store-shell{overflow:hidden}.tenant-product-page{width:100%}.tenant-product-detail{width:100%;box-sizing:border-box}.tenant-product-detail-image{width:100%;max-width:100%;aspect-ratio:4/3}.tenant-product-detail .action-row{align-items:stretch}.tenant-product-detail .action-row>*{width:100%;text-align:center}.tenant-checkout-card{margin-top:8px}.tenant-payment-methods label{align-items:flex-start}}
+/* Unified dark logistics-commerce baseline for tenant storefronts */
+.tenant-store{--store-bg:#07101f;--store-panel:#0d182a;--store-raised:#13233b;--store-text:#f7f9fc;--store-muted:#94a5bd;--store-border:rgba(164,184,218,.17);background:var(--store-bg);color:var(--store-text)}
+.tenant-store-header{background:rgba(7,16,31,.92);border-color:var(--store-border)}
+.tenant-store-header nav a,.tenant-store-actions a,.tenant-section-heading>a,.tenant-product-content>a{color:var(--store-text)}
+.tenant-store-shell{background:radial-gradient(circle at 82% 0,color-mix(in srgb,var(--store-primary) 13%,transparent),transparent 28%)}
+.tenant-store-hero{background:linear-gradient(125deg,#0b1a30,#122744 55%,#0b3650);border:1px solid var(--store-border)}
+.tenant-service-strip,.tenant-category-grid>a,.tenant-product-card,.tenant-faq details,.tenant-content-page,.tenant-checkout-card,.tenant-empty{background:var(--store-panel);border-color:var(--store-border)}
+.tenant-service-strip div{border-color:var(--store-border)}.tenant-service-strip span,.tenant-product-content>small,.tenant-product-content p,.tenant-category-grid span,.tenant-faq p,.tenant-final-cta p{color:var(--store-muted)}
+.tenant-product-media{background:#fff}.tenant-editorial{background:linear-gradient(135deg,#0b1d35,#0d3551)}.tenant-final-cta{background:var(--store-raised);border:1px solid var(--store-border)}
+.tenant-final-cta a{background:var(--store-primary)}.tenant-final-cta a+a{color:var(--store-text);border-color:var(--store-border)}
+.tenant-store-footer{background:#050b15;border-top:1px solid var(--store-border)}
+.tenant-store .card{background:var(--store-panel);border-color:var(--store-border);color:var(--store-text)}
+.tenant-content-page h1,.tenant-checkout-card h1,.tenant-product-page .page-title{color:var(--store-text);font-family:Inter,ui-sans-serif,system-ui,sans-serif}
+.tenant-payment-methods label{background:var(--store-raised);border-color:var(--store-border)}.tenant-payment-methods small{color:var(--store-muted)}
+.tenant-back-button{background:var(--store-raised);color:var(--store-text);border-color:var(--store-border)}
+.tenant-product-detail-image img{object-fit:contain!important;background:#fff}

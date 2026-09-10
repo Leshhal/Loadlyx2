@@ -2,8 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { storefrontPaymentMethodState } from '../lib/storePaymentMethods.js';
 
-test('card and PayPal are enabled only when server reports configured or sandbox', () => {
+test('card and PayPal reflect server-authoritative live, test, configured, or sandbox states', () => {
   assert.equal(storefrontPaymentMethodState({ card: { status: 'CONFIGURED' } }, 'card').enabled, true);
+  assert.equal(storefrontPaymentMethodState({ card: { status: 'LIVE' } }, 'card').enabled, true);
+  assert.equal(storefrontPaymentMethodState({ card: { status: 'TEST' } }, 'card').enabled, true);
+  assert.equal(storefrontPaymentMethodState({ card: { status: 'DISABLED' } }, 'card').enabled, false);
   assert.equal(storefrontPaymentMethodState({ paypal: { status: 'SANDBOX' } }, 'paypal').enabled, true);
   assert.equal(storefrontPaymentMethodState({ paypal: { status: 'CONFIGURATION REQUIRED' } }, 'paypal').enabled, false);
 });

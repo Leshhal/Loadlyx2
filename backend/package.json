@@ -11,12 +11,12 @@
     "test": "node --test",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
-    "prisma:seed": "node prisma/seed.js"
-    ,"prisma:seed:v3.2": "node prisma/v3_2_seed.js",
+    "prisma:seed": "node prisma/seed.js",
+    "prisma:seed:v3.2": "node prisma/v3_2_seed.js",
     "prisma:provision:yxe": "node prisma/provision_yxe_totes.js",
     "provision:test-accounts": "node scripts/provision-production-test-accounts.js",
-    "test:integration:v3.2": "node scripts/v3_2_integration_smoke.js"
-    ,"launch:catalog:dry-run": "node scripts/launch-catalog-data.js"
+    "test:integration:v3.2": "node scripts/v3_2_integration_smoke.js",
+    "launch:catalog:dry-run": "node scripts/launch-catalog-data.js"
   },
   "prisma": {
     "seed": "node prisma/seed.js"
@@ -38,5 +38,8 @@
   "devDependencies": {
     "nodemon": "^3.1.7",
     "prisma": "^5.22.0"
+  },
+  "overrides": {
+    "qs": "6.16.0"
   }
 }
