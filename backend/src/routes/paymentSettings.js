@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { env } from '../config/env.js';
 import { prisma } from '../db/prisma.js';
 import { paypalAvailability, stripeAvailability } from '../services/tenantPaymentPolicy.js';
+import { affirmAvailability, affirmConfiguration } from '../services/affirmService.js';
 
 const router = Router();
 const stripe = env.stripeSecretKey ? new Stripe(env.stripeSecretKey) : null;
@@ -26,7 +27,8 @@ function publicSettings(brandingJson = {}) {
     paypalMerchantId: settings.paypalMerchantId || '',
     paypalConnected: Boolean(settings.paypalMerchantId),
     payoutMethod: settings.payoutMethod || '',
-    payoutDestinationLabel: settings.payoutDestinationLabel || ''
+    payoutDestinationLabel: settings.payoutDestinationLabel || '',
+    affirmEnabled: Boolean(settings.affirmEnabled)
   };
 }
 
@@ -53,28 +55,32 @@ router.get('/', async (req, res) => {
     return res.json({ scope: 'PLATFORM', providers: {
       stripe: { status: !stripe ? 'CONFIGURATION REQUIRED' : env.stripeSecretKey.startsWith('sk_live_') ? 'CONFIGURED' : 'SANDBOX', connectMode: 'EXPRESS', webhookConfigured: Boolean(env.stripeWebhookSecret), liveVerified: false },
       paypal: { status: process.env.PAYPAL_CLIENT_ID && process.env.PAYPAL_CLIENT_SECRET ? (process.env.PAYPAL_MODE === 'LIVE' ? 'LIVE_EXTERNAL_VERIFICATION_REQUIRED' : 'SANDBOX_EXTERNAL_VERIFICATION_REQUIRED') : 'DISABLED', mode: 'MULTIPARTY' },
+      affirm: { ...affirmAvailability({ id: 'tenant-moving-supplies', isDemo: false }, { affirmEnabled: true }, affirmConfiguration()), publicKey: undefined },
       crypto: { status: process.env.CRYPTO_PROVIDER && process.env.CRYPTO_PROVIDER !== 'MOCK' ? 'SANDBOX_OR_LIVE_EXTERNAL_VERIFICATION_REQUIRED' : 'MOCK', provider: process.env.CRYPTO_PROVIDER || 'MOCK' }
     } });
   }
   const tenantId = tenantRequired(req, res); if (!tenantId) return;
-  const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { isDemo: true, stripePolicy: true, stripeEnabled: true, paypalEnabled: true, brandingJson: true } });
+  const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { id: true, isDemo: true, stripePolicy: true, stripeEnabled: true, paypalEnabled: true, brandingJson: true } });
   const settings = await refreshStripeState(tenantId, tenant);
   const stripeState = stripeAvailability(tenant, env.stripeSecretKey);
   const paypalState = paypalAvailability(tenant, { configured: Boolean(process.env.PAYPAL_CLIENT_ID && process.env.PAYPAL_CLIENT_SECRET), mode: process.env.PAYPAL_MODE || 'SANDBOX', merchantId: settings.paypalMerchantId });
-  return res.json({ scope: 'TENANT', settings: { ...publicSettings({ paymentSettings: settings }), stripePolicy: tenant.stripePolicy, stripeEnabled: tenant.stripeEnabled, paypalEnabled: tenant.paypalEnabled }, stripe: stripeState, paypal: paypalState });
+  const affirmState = affirmAvailability(tenant, settings, affirmConfiguration());
+  return res.json({ scope: 'TENANT', settings: { ...publicSettings({ paymentSettings: settings }), socialProof: tenant.brandingJson?.socialProof || { enabled: false, minimumDelaySeconds: 30, displayDurationSeconds: 7, orderAgeDays: 30, showCity: true, showProduct: true, maximumPerSession: 3 }, stripePolicy: tenant.stripePolicy, stripeEnabled: tenant.stripeEnabled, paypalEnabled: tenant.paypalEnabled }, stripe: stripeState, paypal: paypalState, affirm: { ...affirmState, publicKey: undefined } });
 });
 
 router.put('/', async (req, res) => {
   const tenantId = tenantRequired(req, res); if (!tenantId) return;
-  const input = z.object({ stripeEnabled: z.boolean().optional(), paypalEnabled: z.boolean().optional(), paypalMerchantId: z.string().trim().max(160).optional(), payoutMethod: z.enum(['STRIPE', 'PAYPAL', 'MANUAL']).optional(), payoutDestinationLabel: z.string().trim().max(160).optional() }).parse(req.body);
-  const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { isDemo: true, stripePolicy: true, brandingJson: true } });
+  const input = z.object({ stripeEnabled: z.boolean().optional(), paypalEnabled: z.boolean().optional(), paypalMerchantId: z.string().trim().max(160).optional(), affirmEnabled: z.boolean().optional(), payoutMethod: z.enum(['STRIPE', 'PAYPAL', 'MANUAL']).optional(), payoutDestinationLabel: z.string().trim().max(160).optional(), socialProof: z.object({ enabled: z.boolean(), minimumDelaySeconds: z.number().int().min(20).max(120), displayDurationSeconds: z.number().int().min(4).max(12), orderAgeDays: z.number().int().min(1).max(90), showCity: z.boolean(), showProduct: z.boolean(), maximumPerSession: z.number().int().min(1).max(5) }).optional() }).parse(req.body);
+  const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { id: true, isDemo: true, stripePolicy: true, brandingJson: true } });
   if (tenant?.isDemo && (input.stripeEnabled || input.paypalEnabled)) return res.status(409).json({ error: 'Demo tenants cannot enable real payment providers' });
   if (input.stripeEnabled && tenant?.stripePolicy !== 'PLATFORM_STRIPE_ALLOWED') return res.status(403).json({ error: 'This tenant is not authorized to use the platform Stripe account' });
+  if (input.affirmEnabled && tenant?.id !== 'tenant-moving-supplies') return res.status(403).json({ error: 'Affirm is not authorized for this tenant' });
+  if (input.affirmEnabled && !affirmConfiguration().configured) return res.status(409).json({ error: 'Configure Affirm server credentials before enabling checkout' });
   const branding = tenant?.brandingJson && typeof tenant.brandingJson === 'object' ? tenant.brandingJson : {};
   const current = branding.paymentSettings && typeof branding.paymentSettings === 'object' ? branding.paymentSettings : {};
-  const { stripeEnabled, paypalEnabled, ...paymentInput } = input;
+  const { stripeEnabled, paypalEnabled, socialProof, ...paymentInput } = input;
   const updated = { ...current, ...paymentInput };
-  const saved = await prisma.tenant.update({ where: { id: tenantId }, data: { brandingJson: { ...branding, paymentSettings: updated }, ...(stripeEnabled === undefined ? {} : { stripeEnabled }), ...(paypalEnabled === undefined ? {} : { paypalEnabled }) }, select: { stripeEnabled: true, paypalEnabled: true } });
+  const saved = await prisma.tenant.update({ where: { id: tenantId }, data: { brandingJson: { ...branding, ...(socialProof ? { socialProof } : {}), paymentSettings: updated }, ...(stripeEnabled === undefined ? {} : { stripeEnabled }), ...(paypalEnabled === undefined ? {} : { paypalEnabled }) }, select: { stripeEnabled: true, paypalEnabled: true } });
   return res.json({ settings: { ...publicSettings({ paymentSettings: updated }), ...saved } });
 });
 

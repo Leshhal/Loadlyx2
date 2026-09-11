@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { storefrontPaymentMethodState } from '@/lib/storePaymentMethods';
+import { launchAffirmCheckout } from '@/lib/affirmCheckout';
+import { trackStorefrontEvent } from '@/lib/storefrontAnalytics';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api';
 const TERMINAL_CRYPTO = new Set(['PAID', 'OVERPAID', 'EXPIRED', 'FAILED', 'REFUNDED']);
@@ -15,6 +17,7 @@ export default function CheckoutFlow({ product, tenantSlug, initialQty }) {
   const [email, setEmail] = useState('');
   const [country, setCountry] = useState('CA');
   const [province, setProvince] = useState('');
+  const [address, setAddress] = useState({ line1: '', city: '', postalCode: '' });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [paymentMethods, setPaymentMethods] = useState(null);
@@ -23,12 +26,12 @@ export default function CheckoutFlow({ product, tenantSlug, initialQty }) {
   const [cryptoInvoice, setCryptoInvoice] = useState(null);
   const priceCents = Number(product.priceCents || Math.round(Number(product.price || 0) * 100));
   const subtotalCents = priceCents * quantity;
-  const availability = useMemo(() => ({ card: storefrontPaymentMethodState(paymentMethods, 'card'), paypal: storefrontPaymentMethodState(paymentMethods, 'paypal'), crypto: storefrontPaymentMethodState(paymentMethods, 'crypto') }), [paymentMethods]);
+  const availability = useMemo(() => ({ card: storefrontPaymentMethodState(paymentMethods, 'card'), paypal: storefrontPaymentMethodState(paymentMethods, 'paypal'), affirm: storefrontPaymentMethodState(paymentMethods, 'affirm'), crypto: storefrontPaymentMethodState(paymentMethods, 'crypto') }), [paymentMethods]);
 
   useEffect(() => {
     fetch(`${API_URL}/orders/payment-methods`, { headers: { 'x-tenant-slug': tenantSlug } })
       .then(async (response) => { const body = await response.json(); if (!response.ok) throw new Error(body.error); return body; })
-      .then((methods) => { setPaymentMethods(methods); const crypto = storefrontPaymentMethodState(methods, 'crypto'); if (crypto.assets?.length) setCryptoAsset(crypto.assets[0]); })
+      .then((methods) => { setPaymentMethods(methods); trackStorefrontEvent(tenantSlug, 'payment_methods_loaded'); const crypto = storefrontPaymentMethodState(methods, 'crypto'); if (crypto.assets?.length) setCryptoAsset(crypto.assets[0]); })
       .catch(() => setPaymentMethods({ card: { status: 'CONFIGURATION REQUIRED' }, paypal: { status: 'CONFIGURATION REQUIRED' }, crypto: { status: 'DISABLED', acceptedAssets: [] } }));
   }, [tenantSlug]);
 
@@ -39,17 +42,18 @@ export default function CheckoutFlow({ product, tenantSlug, initialQty }) {
   }, [cryptoInvoice]);
 
   async function handleProviderCheckout() {
-    setError(''); setLoading(true);
+    setError(''); setLoading(true); trackStorefrontEvent(tenantSlug, 'checkout_started', { paymentMethod });
     try {
-      const response = await fetch(`${API_URL}/orders/checkout`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-tenant-slug': tenantSlug }, body: JSON.stringify({ customerName: name, customerEmail: email, shippingCountry: country, shippingProvince: country === 'CA' ? province : undefined, shippingState: country === 'US' ? province : undefined, paymentMethod: paymentMethod === 'paypal' ? 'PAYPAL' : 'STRIPE', items: [{ productId: product.id, quantity }] }) });
+      const response = await fetch(`${API_URL}/orders/checkout`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-tenant-slug': tenantSlug }, body: JSON.stringify({ customerName: name, customerEmail: email, shippingCountry: country, shippingProvince: country === 'CA' ? province : undefined, shippingState: country === 'US' ? province : undefined, shippingAddressLine1: address.line1, shippingCity: address.city, shippingPostalCode: address.postalCode, paymentMethod: paymentMethod === 'paypal' ? 'PAYPAL' : paymentMethod === 'affirm' ? 'AFFIRM' : 'STRIPE', items: [{ productId: product.id, quantity }] }) });
       const body = await response.json();
-      if (!response.ok || !body.checkoutUrl) throw new Error(body.message || body.error || 'Payment checkout could not be started');
+      if (!response.ok || (!body.checkoutUrl && !body.affirm)) throw new Error(body.message || body.error || 'Payment checkout could not be started');
+      if (body.provider === 'AFFIRM' && body.affirm) { launchAffirmCheckout(body.affirm, async ({ checkout_token: checkoutToken }) => { const confirmation = await fetch(API_URL + '/orders/affirm/' + body.orderId + '/authorize', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-tenant-slug': tenantSlug }, body: JSON.stringify({ checkoutToken }) }); const result = await confirmation.json(); if (!confirmation.ok) throw new Error(result.error || 'Affirm payment could not be confirmed'); window.location.href = '/tenant/' + tenantSlug + '/checkout/success?affirm_order_id=' + body.orderId; }, (affirmError) => { setError(affirmError?.message || 'Affirm checkout was not completed'); setLoading(false); }); return; }
       window.location.href = body.checkoutUrl;
     } catch (checkoutError) { setError(checkoutError.message); setLoading(false); }
   }
 
   async function handleCryptoCheckout() {
-    setError(''); setLoading(true);
+    setError(''); setLoading(true); trackStorefrontEvent(tenantSlug, 'checkout_started', { paymentMethod });
     try {
       const response = await fetch(`${API_URL}/crypto/invoices`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-tenant-slug': tenantSlug }, body: JSON.stringify({ productSlug: product.slug, quantity, asset: cryptoAsset, name, email, country, province }) });
       const body = await response.json();
@@ -63,13 +67,15 @@ export default function CheckoutFlow({ product, tenantSlug, initialQty }) {
     {error ? <p className="error" role="alert">{error}</p> : null}
     {step === 'summary' ? <><div style={styles.item}><div><h2 style={styles.productName}>{product.name}</h2><label style={styles.label}>Quantity</label><input type="number" min="1" value={quantity} onChange={(event) => setQuantity(Math.max(1, Number(event.target.value || 1)))} style={styles.input} /><p style={styles.meta}>Price: ${(priceCents / 100).toFixed(2)}</p></div><strong style={styles.total}>${(subtotalCents / 100).toFixed(2)}</strong></div><button type="button" className="tenant-pay-button" onClick={() => setStep('payment')}>Continue to payment</button></> : cryptoInvoice ? <section style={styles.cryptoInvoice}><span style={styles.cryptoBadge}>{cryptoInvoice.status}</span><h2>Send {Number(cryptoInvoice.cryptoAmount).toFixed(8)} {cryptoInvoice.asset}</h2><p style={styles.address}>{cryptoInvoice.paymentAddress}</p><p>Confirmations: {cryptoInvoice.confirmations} / {cryptoInvoice.requiredConfirmations}</p><p>Invoice expires {new Date(cryptoInvoice.expiresAt).toLocaleString()}.</p><p style={styles.meta}>Fulfilment begins only after the verified listener records the required confirmations.</p></section> : <>
       <div style={styles.form}><label style={styles.label}>Full name<input required style={styles.input} value={name} onChange={(event) => setName(event.target.value)} /></label><label style={styles.label}>Email address<input required type="email" style={styles.input} value={email} onChange={(event) => setEmail(event.target.value)} /></label><label style={styles.label}>Shipping country<select style={styles.input} value={country} onChange={(event) => setCountry(event.target.value)}><option value="CA">Canada</option><option value="US">United States</option></select></label><label style={styles.label}>{country === 'CA' ? 'Province' : 'State'}<input required style={styles.input} value={province} onChange={(event) => setProvince(event.target.value)} placeholder={country === 'CA' ? 'SK / AB / ON' : 'State'} /></label></div>
+      <div style={styles.form}><label style={styles.label}>Shipping address<input style={styles.input} value={address.line1} onChange={(event) => setAddress({ ...address, line1: event.target.value })} required={paymentMethod === 'affirm'} /></label><label style={styles.label}>City<input style={styles.input} value={address.city} onChange={(event) => setAddress({ ...address, city: event.target.value })} required={paymentMethod === 'affirm'} /></label><label style={styles.label}>Postal / ZIP code<input style={styles.input} value={address.postalCode} onChange={(event) => setAddress({ ...address, postalCode: event.target.value })} required={paymentMethod === 'affirm'} /></label></div>
       <fieldset className="tenant-payment-methods"><legend>Choose how to pay</legend>{[
         ['card', 'Credit / debit card', 'Stripe'],
         ['paypal', 'PayPal', 'PayPal balance or eligible card'],
+        ['affirm', 'Pay over time with Affirm', 'Subject to Affirm approval'],
         ['crypto', 'Cryptocurrency', 'ADA or SOL']
-      ].map(([key, title, provider]) => <label key={key} className={paymentMethod === key ? 'selected' : ''}><input type="radio" name="paymentMethod" value={key} checked={paymentMethod === key} disabled={!availability[key].enabled} onChange={() => setPaymentMethod(key)} /><span><strong>{title}</strong><small>{provider} · {availability[key].note}</small></span></label>)}</fieldset>
+      ].map(([key, title, provider]) => <label key={key} className={paymentMethod === key ? 'selected' : ''}><input type="radio" name="paymentMethod" value={key} checked={paymentMethod === key} disabled={!availability[key].enabled} onChange={() => { setPaymentMethod(key); trackStorefrontEvent(tenantSlug, key === 'card' ? 'stripe_selected' : key === 'paypal' ? 'paypal_selected' : key === 'affirm' ? 'affirm_selected' : 'checkout_started'); }} /><span><strong>{title}</strong><small>{provider} · {availability[key].note}</small></span></label>)}</fieldset>
       {paymentMethod === 'crypto' && availability.crypto.assets?.length ? <label style={styles.label}>Blockchain<select style={styles.input} value={cryptoAsset} onChange={(event) => setCryptoAsset(event.target.value)}>{availability.crypto.assets.map((asset) => <option key={asset}>{asset}</option>)}</select></label> : null}
-      <button type="button" className="tenant-pay-button" disabled={loading || !selected?.enabled || !name || !email || !province} onClick={paymentMethod === 'crypto' ? handleCryptoCheckout : handleProviderCheckout}>{loading ? 'Starting secure checkout…' : paymentMethod === 'paypal' ? 'Continue to PayPal' : paymentMethod === 'crypto' ? `Create ${cryptoAsset} payment invoice` : `Pay $${(subtotalCents / 100).toFixed(2)} with card`}</button>
+      <button type="button" className="tenant-pay-button" disabled={loading || !selected?.enabled || !name || !email || !province || (paymentMethod === 'affirm' && (!address.line1 || !address.city || !address.postalCode))} onClick={paymentMethod === 'crypto' ? handleCryptoCheckout : handleProviderCheckout}>{loading ? 'Starting secure checkout…' : paymentMethod === 'paypal' ? 'Continue to PayPal' : paymentMethod === 'affirm' ? 'Continue with Affirm' : paymentMethod === 'crypto' ? `Create ${cryptoAsset} payment invoice` : `Pay $${(subtotalCents / 100).toFixed(2)} with card`}</button>
       <button type="button" className="tenant-back-button" onClick={() => setStep('summary')}>Back</button>
     </>}
   </>;

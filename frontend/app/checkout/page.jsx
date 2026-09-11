@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { apiFetch } from '../../lib/api';
 import { getAttributionData } from '../../lib/attribution';
 import { storefrontPaymentMethodState } from '../../lib/storePaymentMethods';
+import { launchAffirmCheckout } from '../../lib/affirmCheckout';
 
 function getTenantSlug() {
 return resolveTenantSlug ();
@@ -30,7 +31,10 @@ customerName: '',
 customerEmail: '',
 shippingCountry: 'CA',
 shippingProvince: '',
-shippingState: ''
+shippingState: '',
+shippingAddressLine1: '',
+shippingCity: '',
+shippingPostalCode: ''
 });
 const [message, setMessage] = useState('');
 const [loading, setLoading] = useState(false);
@@ -40,14 +44,14 @@ const [paymentMethod, setPaymentMethod] = useState('STRIPE');
 
 useEffect(() => {
 setCart(loadCart());
-apiFetch('/orders/payment-methods').then((methods) => { setPaymentMethods(methods); const card = storefrontPaymentMethodState(methods, 'card'); const paypal = storefrontPaymentMethodState(methods, 'paypal'); if (!card.enabled && paypal.enabled) setPaymentMethod('PAYPAL'); }).catch(() => setPaymentMethods(null));
+apiFetch('/orders/payment-methods').then((methods) => { setPaymentMethods(methods); const card = storefrontPaymentMethodState(methods, 'card'); const paypal = storefrontPaymentMethodState(methods, 'paypal'); const affirm = storefrontPaymentMethodState(methods, 'affirm'); if (!card.enabled && paypal.enabled) setPaymentMethod('PAYPAL'); else if (!card.enabled && !paypal.enabled && affirm.enabled) setPaymentMethod('AFFIRM'); }).catch(() => setPaymentMethods(null));
 }, []);
 
 const subtotal = useMemo(
 () => cart.reduce((sum, item) => sum + item.product.priceCents * item.quantity, 0),
 [cart]
 );
-const availability = useMemo(() => ({ card: storefrontPaymentMethodState(paymentMethods, 'card'), paypal: storefrontPaymentMethodState(paymentMethods, 'paypal') }), [paymentMethods]);
+const availability = useMemo(() => ({ card: storefrontPaymentMethodState(paymentMethods, 'card'), paypal: storefrontPaymentMethodState(paymentMethods, 'paypal'), affirm: storefrontPaymentMethodState(paymentMethods, 'affirm') }), [paymentMethods]);
 
 useEffect(() => {
 if (!cart.length) return;
@@ -82,6 +86,8 @@ attribution: getAttributionData()
 })
 });
 
+if (result.provider === 'AFFIRM' && result.affirm) { launchAffirmCheckout(result.affirm, async ({ checkout_token: checkoutToken }) => { const confirmation = await apiFetch('/orders/affirm/' + result.orderId + '/authorize', { method: 'POST', body: JSON.stringify({ checkoutToken }) }); window.location.href = '/checkout/success?affirm_order_id=' + confirmation.order.id; }, (affirmError) => { setMessage(affirmError?.message || 'Affirm checkout was not completed'); setLoading(false); }); return; }
+
 if (result.checkoutUrl) {
 window.location.href = result.checkoutUrl;
 return;
@@ -106,10 +112,10 @@ return (
 Loadlyx Secure Checkout
 </h1>
 <p className="lead" style={{ maxWidth: 560 }}>
-Review your order, shipping destination, and launch Stripe checkout securely.
+Review your order, shipping destination, and choose an available secure payment method.
 </p>
 </div>
-<div className="badge badge-gold">Powered by Stripe</div>
+<div className="badge badge-gold">Secure payment options</div>
 </div>
 
 {cart.length === 0 ? (
@@ -165,9 +171,9 @@ ${((item.product.priceCents * item.quantity) / 100).toFixed(2)}
 </div>
 
 <div className="card">
-{paymentMethods ? <div className="grid" style={{ gap: 10, marginBottom: 18 }}><strong>Choose a payment method</strong><div className="payment-availability"><span className={`badge ${availability.card.enabled ? 'available' : 'unavailable'}`}>Card · {availability.card.enabled ? 'Available' : availability.card.note}</span><span className={`badge ${availability.paypal.enabled ? 'available' : 'unavailable'}`}>PayPal · {availability.paypal.enabled ? 'Available' : availability.paypal.note}</span></div></div> : <p className="muted small">Checking available payment methods…</p>}
+{paymentMethods ? <div className="grid" style={{ gap: 10, marginBottom: 18 }}><strong>Choose a payment method</strong><div className="payment-availability"><span className={`badge ${availability.card.enabled ? 'available' : 'unavailable'}`}>Card · {availability.card.enabled ? 'Available' : availability.card.note}</span><span className={`badge ${availability.paypal.enabled ? 'available' : 'unavailable'}`}>PayPal · {availability.paypal.enabled ? 'Available' : availability.paypal.note}</span><span className={availability.affirm.enabled ? 'badge available' : 'badge unavailable'}>Affirm · {availability.affirm.enabled ? 'Available' : availability.affirm.note}</span></div></div> : <p className="muted small">Checking available payment methods…</p>}
 <form className="grid" style={{ gap: 14 }} onSubmit={submitCheckout}>
-<div className="field"><label>Payment method</label><select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)}><option value="STRIPE" disabled={!availability.card.enabled}>Credit or debit card</option><option value="PAYPAL" disabled={!availability.paypal.enabled}>PayPal</option></select></div>
+<div className="field"><label>Payment method</label><select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)}><option value="STRIPE" disabled={!availability.card.enabled}>Credit or debit card</option><option value="PAYPAL" disabled={!availability.paypal.enabled}>PayPal</option><option value="AFFIRM" disabled={!availability.affirm.enabled}>Pay over time with Affirm</option></select></div>
 <div className="field">
 <label>Full Name</label>
 <input
@@ -204,6 +210,9 @@ setForm({ ...form, shippingCountry: e.target.value })
 </select>
 </div>
 
+<div className="field"><label>Shipping Address</label><input value={form.shippingAddressLine1} onChange={(e) => setForm({ ...form, shippingAddressLine1: e.target.value })} required={paymentMethod === 'AFFIRM'} autoComplete="shipping street-address"/></div>
+<div className="field"><label>City</label><input value={form.shippingCity} onChange={(e) => setForm({ ...form, shippingCity: e.target.value })} required={paymentMethod === 'AFFIRM'} autoComplete="shipping address-level2"/></div>
+<div className="field"><label>Postal / ZIP Code</label><input value={form.shippingPostalCode} onChange={(e) => setForm({ ...form, shippingPostalCode: e.target.value })} required={paymentMethod === 'AFFIRM'} autoComplete="shipping postal-code"/></div>
 {form.shippingCountry === 'CA' ? (
 <div className="field">
 <label>Province</label>
@@ -213,7 +222,10 @@ onChange={(e) =>
 setForm({
 ...form,
 shippingProvince: e.target.value,
-shippingState: ''
+shippingState: '',
+shippingAddressLine1: '',
+shippingCity: '',
+shippingPostalCode: ''
 })
 }
 placeholder="SK / AB / ON"
@@ -236,7 +248,7 @@ placeholder="ND / WA / TX"
 </div>
 )}
 
-<button className="btn" type="submit" disabled={loading || !cart.length || (paymentMethod === 'STRIPE' ? !availability.card.enabled : !availability.paypal.enabled)}>
+<button className="btn" type="submit" disabled={loading || !cart.length || (paymentMethod === 'STRIPE' ? !availability.card.enabled : paymentMethod === 'PAYPAL' ? !availability.paypal.enabled : !availability.affirm.enabled)}>
 {loading ? 'Starting checkout…' : `Pay $${(subtotal / 100).toFixed(2)}+`}
 </button>
 

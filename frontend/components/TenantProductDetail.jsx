@@ -3,6 +3,8 @@
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import StoreProductImage from './StoreProductImage';
+import { trackStorefrontEvent } from '@/lib/storefrontAnalytics';
 
 function cartKey(tenantSlug) {
   return `loadlyx_cart_${tenantSlug || 'default'}`;
@@ -25,9 +27,9 @@ export default function TenantProductDetail({ product, tenantSlug }) {
   const unitPriceCents = Number(selectedVariant?.salePriceCents ?? selectedVariant?.priceCents ?? product.salePriceCents ?? product.priceCents ?? 0);
   const originalPriceCents = Number(selectedVariant?.priceCents ?? product.priceCents ?? 0);
   const availableStock = Number(selectedVariant?.stock ?? product.stock ?? 0);
-  const image = product.primaryImage || product.images?.[0] || null;
 
   function addToCart(openCheckout = false) {
+    trackStorefrontEvent(tenantSlug, openCheckout ? 'buy_now' : 'add_to_cart', { productId: product.id, quantity });
     const current = readCart(tenantSlug);
     const lineKey = `${product.id}:${selectedVariantId || 'default'}`;
     const existing = current.find((item) => (item.lineKey || `${item.productId}:default`) === lineKey);
@@ -43,9 +45,7 @@ export default function TenantProductDetail({ product, tenantSlug }) {
   return <main className="lx-storefront tenant-product-page">
     <Link href={`/tenant/${tenantSlug}/catalog`} className="text-link">← Back to store</Link>
     <section className="card tenant-product-detail">
-      <div className="product-image tenant-product-detail-image">
-        {image?.url ? <img src={image.url} alt={image.altText || product.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <div className="muted">No image available</div>}
-      </div>
+      <StoreProductImage product={product} className="product-image tenant-product-detail-image" priority gallery />
       <div className="grid" style={{ alignContent: 'center', gap: 16 }}>
         <span className="badge">{product.category?.name || 'Product'}</span>
         <h1 className="page-title">{product.name}</h1>

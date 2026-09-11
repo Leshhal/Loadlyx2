@@ -8,6 +8,7 @@ import { apiFetch } from '../../../lib/api';
 function SuccessPageContent() {
 const searchParams = useSearchParams();
 const sessionId = searchParams.get('session_id');
+const affirmOrderId = searchParams.get('affirm_order_id');
 
 const [state, setState] = useState({
 loading: true,
@@ -16,10 +17,19 @@ data: null
 });
 
 useEffect(() => {
+if (affirmOrderId) {
+setState({
+loading: false,
+error: '',
+data: { provider: 'AFFIRM', orderId: affirmOrderId }
+});
+return;
+}
+
 if (!sessionId) {
 setState({
 loading: false,
-error: 'Missing Stripe session ID.',
+error: 'Missing checkout confirmation.',
 data: null
 });
 return;
@@ -40,7 +50,7 @@ error: error.message,
 data: null
 })
 );
-}, [sessionId]);
+}, [affirmOrderId, sessionId]);
 
 return (
 <main className="container">
@@ -55,7 +65,13 @@ return (
 <p className="error">{state.error}</p>
 ) : null}
 
-{state.data ? (
+{state.data?.provider === 'AFFIRM' ? (
+<>
+<p className="success">Payment status: <strong>PAID</strong></p>
+<p className="muted">Your Affirm payment was confirmed.</p>
+<p><strong>Order:</strong> {state.data.orderId}</p>
+</>
+) : state.data ? (
 <>
 <p className="success">
 Payment status:{' '}

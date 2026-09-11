@@ -1200,6 +1200,8 @@ model Order {
   stripePaymentIntentId   String?
   paypalOrderId           String?              @unique
   paypalCaptureId         String?              @unique
+  affirmCheckoutToken     String?              @unique
+  affirmTransactionId     String?              @unique
   customerEmail           String
   customerName            String?
   status                  OrderStatus          @default(PENDING)
@@ -2547,4 +2549,17 @@ model MetricSnapshot {
 
   @@unique([tenantId, metricKey, periodStart, periodEnd])
   @@index([metricKey, periodEnd])
+}
+
+model StorefrontAnalyticsEvent {
+  id           String   @id @default(cuid())
+  tenantId     String
+  eventName    String
+  sessionId    String?
+  path         String?
+  metadataJson Json?
+  createdAt    DateTime @default(now())
+
+  @@index([tenantId, eventName, createdAt])
+  @@index([sessionId, createdAt])
 }

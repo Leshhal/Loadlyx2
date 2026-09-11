@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import StoreCartLink from './StoreCartLink';
+import RecentOrderToast from './RecentOrderToast';
 
 function navigationFor(branding = {}) {
   if (branding.businessType === 'MOVING_SUPPLIES') return [
@@ -27,6 +28,7 @@ export default function TenantStoreShell({ tenant, slug, children }) {
       <div className="tenant-store-actions">{isService && branding.shopMovingSuppliesUrl ? <a href={branding.shopMovingSuppliesUrl}>Shop Moving Supplies</a> : <Link href="/catalog">Search</Link>}{!isService ? <StoreCartLink tenantSlug={slug} /> : <Link className="tenant-cart-link" href="/quote">Get a Quote</Link>}</div>
     </div></header>
     <div className="tenant-store-shell">{children}</div>
+    <RecentOrderToast tenantSlug={slug} />
     <footer className="tenant-store-footer"><div><Link href="/" className="tenant-store-brand"><span>{name.slice(0, 1)}</span><strong>{name}</strong></Link><p>{branding.footerDescription || 'Products and services delivered through secure Loadlyx checkout.'}</p></div><nav><b>{isService ? 'Services' : 'Shop'}</b>{navigation.slice(0,3).map(([label,href])=><Link key={`footer-${label}`} href={href}>{label}</Link>)}</nav><nav><b>Customer care</b>{branding.contactEmail ? <a href={`mailto:${branding.contactEmail}`}>{branding.contactEmail}</a> : null}{branding.contactPhone ? <a href={`tel:${branding.contactPhone}`}>{branding.contactPhone}</a> : null}<span>{branding.serviceArea || branding.contactAddress || 'Local service area'}</span></nav><nav><b>Policies</b><a href="https://www.loadlyx.com/legal/privacy">Privacy</a><a href="https://www.loadlyx.com/legal/terms">Terms</a><a href="https://www.loadlyx.com/legal/payments">Payments</a><small>{tenant?.isDemo ? 'DEMO DATA · NO REAL PAYMENTS' : 'Powered by Loadlyx'}</small></nav></footer>
   </main>;
 }

@@ -127,7 +127,10 @@ app.use('/api/orders', (req, res, next) => {
   const publicStoreCheckout = req.method === 'POST' && req.path === '/checkout';
   const publicCheckoutConfirmation = req.method === 'GET' && req.path.startsWith('/checkout-session/');
   const publicPaymentMethods = req.method === 'GET' && req.path === '/payment-methods';
-  return publicStoreCheckout || publicCheckoutConfirmation || publicPaymentMethods ? next() : requireAuth(req, res, next);
+  const publicAffirmConfirmation = req.method === 'POST' && req.path.startsWith('/affirm/');
+  const publicSocialProof = req.method === 'GET' && req.path === '/social-proof/recent';
+  const publicStoreAnalytics = req.method === 'POST' && req.path === '/analytics';
+  return publicStoreCheckout || publicCheckoutConfirmation || publicPaymentMethods || publicAffirmConfirmation || publicSocialProof || publicStoreAnalytics ? next() : requireAuth(req, res, next);
 }, orderRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/carriers', carrierRoutes);

@@ -9,6 +9,7 @@ import { calculateShipping } from '../utils/shipping.js';
 import { recordRefund } from '../services/ledgerService.js';
 import { capturePaypalOrder, createPaypalOrder, refundPaypalCapture } from '../services/paypalService.js';
 import { paypalAvailability, stripeAvailability } from '../services/tenantPaymentPolicy.js';
+import { affirmAvailability, affirmConfiguration, authorizeAndCaptureAffirm, buildAffirmCheckout } from '../services/affirmService.js';
 
 const router = Router();
 const stripe = env.stripeSecretKey ? new Stripe(env.stripeSecretKey) : null;
@@ -16,15 +17,17 @@ const stripe = env.stripeSecretKey ? new Stripe(env.stripeSecretKey) : null;
 router.get('/payment-methods', async (req, res) => {
   if (!req.tenant?.id) return res.status(404).json({ error: 'Tenant storefront not found' });
   const [tenant, cryptoSettings] = await Promise.all([
-    prisma.tenant.findUnique({ where: { id: req.tenant.id }, select: { isDemo: true, stripePolicy: true, stripeEnabled: true, paypalEnabled: true, brandingJson: true } }),
+    prisma.tenant.findUnique({ where: { id: req.tenant.id }, select: { id: true, name: true, isDemo: true, stripePolicy: true, stripeEnabled: true, paypalEnabled: true, brandingJson: true } }),
     prisma.cryptoPaymentSettings.findUnique({ where: { tenantId: req.tenant.id } })
   ]);
   const settings = tenant?.brandingJson?.paymentSettings || {};
   const card = stripeAvailability(tenant, env.stripeSecretKey);
   const paypal = paypalAvailability(tenant, { configured: Boolean(process.env.PAYPAL_CLIENT_ID && process.env.PAYPAL_CLIENT_SECRET), mode: process.env.PAYPAL_MODE || 'SANDBOX', merchantId: settings.paypalMerchantId });
+  const affirm = affirmAvailability(tenant, settings, affirmConfiguration());
   return res.json({
     card: { ...card, provider: 'STRIPE', tenantConnected: Boolean(settings.stripeAccountId), policy: tenant?.stripePolicy || 'DISABLED', liveVerified: false },
     paypal: { ...paypal, provider: 'PAYPAL', liveVerified: false },
+    affirm: { ...affirm, provider: 'AFFIRM' },
     crypto: { status: cryptoSettings?.enabled ? (cryptoSettings.provider === 'MOCK' ? 'MOCK' : 'EXTERNAL_VERIFICATION_REQUIRED') : 'DISABLED', provider: cryptoSettings?.provider || 'MOCK', acceptedAssets: cryptoSettings?.acceptedAssets || [] }
   });
 });
@@ -216,8 +219,11 @@ router.post('/checkout', async (req, res, next) => {
     shippingCountry: z.string().default('CA'),
     shippingProvince: z.string().optional(),
     shippingState: z.string().optional(),
+    shippingAddressLine1: z.string().trim().min(3).max(180).optional(),
+    shippingCity: z.string().trim().min(2).max(100).optional(),
+    shippingPostalCode: z.string().trim().min(3).max(20).optional(),
     items: z.array(z.object({ productId: z.string(), quantity: z.number().int().positive() })).min(1),
-    paymentMethod: z.enum(['STRIPE','PAYPAL']).default('STRIPE'),
+    paymentMethod: z.enum(['STRIPE','PAYPAL','AFFIRM']).default('STRIPE'),
     attribution: z.object({
       sessionId: z.string().optional(),
       referrer: z.string().optional(),
@@ -231,7 +237,7 @@ router.post('/checkout', async (req, res, next) => {
   });
 
   const input = schema.parse(req.body);
-  const checkoutTenant = await prisma.tenant.findUnique({ where: { id: req.tenant.id }, select: { isDemo: true, stripePolicy: true, stripeEnabled: true, paypalEnabled: true, brandingJson: true } });
+  const checkoutTenant = await prisma.tenant.findUnique({ where: { id: req.tenant.id }, select: { id: true, name: true, isDemo: true, stripePolicy: true, stripeEnabled: true, paypalEnabled: true, brandingJson: true } });
   if (checkoutTenant?.isDemo) {
     return res.status(409).json({ error: 'DEMO_CHECKOUT_DISABLED', message: 'This demo storefront does not process real payments or create financial transactions.' });
   }
@@ -240,6 +246,9 @@ router.post('/checkout', async (req, res, next) => {
   const paypal = paypalAvailability(checkoutTenant, { configured: Boolean(process.env.PAYPAL_CLIENT_ID && process.env.PAYPAL_CLIENT_SECRET), mode: process.env.PAYPAL_MODE || 'SANDBOX', merchantId: paymentSettings.paypalMerchantId });
   if (input.paymentMethod === 'STRIPE' && (!stripe || !card.available)) return res.status(409).json({ error: 'Card payments are temporarily unavailable. Please choose another payment method.' });
   if (input.paymentMethod === 'PAYPAL' && !paypal.available) return res.status(409).json({ error: 'PayPal is currently unavailable.' });
+  const affirm = affirmAvailability(checkoutTenant, paymentSettings, affirmConfiguration());
+  if (input.paymentMethod === 'AFFIRM' && !affirm.available) return res.status(409).json({ error: 'Affirm is not authorized or configured for this tenant.' });
+  if (input.paymentMethod === 'AFFIRM' && (!input.shippingAddressLine1 || !input.shippingCity || !input.shippingPostalCode)) return res.status(400).json({ error: 'Shipping address, city, and postal code are required for Affirm.' });
   const products = await prisma.product.findMany({
     where: {
       tenantId: req.tenant.id,
@@ -274,6 +283,7 @@ router.post('/checkout', async (req, res, next) => {
       shippingCountry: input.shippingCountry,
       shippingProvince: input.shippingProvince,
       shippingState: input.shippingState,
+      shippingAddressJson: input.shippingAddressLine1 ? { line1: input.shippingAddressLine1, city: input.shippingCity, postalCode: input.shippingPostalCode } : undefined,
       subtotalCents,
       shippingCents: shipping.shippingCents,
       totalCents,
@@ -304,6 +314,11 @@ router.post('/checkout', async (req, res, next) => {
 
   const commissionPolicy = await getCommissionPolicy(prisma, req.tenant.id);
   const applicationFeeCents = Math.round((subtotalCents * commissionPolicy.storeCommissionBps) / 10000);
+  if (input.paymentMethod === 'AFFIRM') {
+    const origin = checkoutOrigin(req);
+    const checkout = buildAffirmCheckout({ order, items: enrichedItems, origin, merchantName: checkoutTenant.name || 'Moving Supplies' });
+    return res.status(201).json({ orderId: order.id, provider: 'AFFIRM', affirm: { checkout, publicKey: affirm.publicKey, scriptUrl: affirm.scriptUrl }, order });
+  }
   if (input.paymentMethod === 'PAYPAL') {
     const origin = checkoutOrigin(req);
     const paypalOrder = await createPaypalOrder({ orderId: order.id, totalCents, currency: env.stripeCurrency, returnUrl: `${origin}/checkout/paypal?order_id=${order.id}`, cancelUrl: `${origin}/checkout/cancel`, payeeMerchantId: paymentSettings.paypalMerchantId });
@@ -384,4 +399,48 @@ router.post('/paypal/:orderId/capture', async (req, res, next) => {
   } catch (error) { return next(error); }
 });
 
+
+
+const STOREFRONT_EVENTS = new Set(['hero_cta_clicked','product_viewed','add_to_cart','buy_now','checkout_started','payment_methods_loaded','stripe_selected','paypal_selected','affirm_selected','payment_succeeded','payment_failed','social_proof_popup_shown','social_proof_popup_clicked','social_proof_dismissed']);
+router.post('/analytics', async (req, res, next) => {
+  try {
+    if (!req.tenant?.id) return res.status(404).json({ error: 'Tenant storefront not found' });
+    const input = z.object({ eventName: z.string().refine((value) => STOREFRONT_EVENTS.has(value)), sessionId: z.string().trim().max(120).optional(), path: z.string().trim().max(500).optional(), metadata: z.record(z.union([z.string().max(200), z.number(), z.boolean(), z.null()])).optional() }).parse(req.body);
+    await prisma.storefrontAnalyticsEvent.create({ data: { tenantId: req.tenant.id, eventName: input.eventName, sessionId: input.sessionId, path: input.path, metadataJson: input.metadata || {} } });
+    return res.status(202).json({ accepted: true });
+  } catch (error) { return next(error); }
+});
+router.post('/affirm/:orderId/authorize', async (req, res, next) => {
+  try {
+    if (!req.tenant?.id) return res.status(404).json({ error: 'Tenant storefront not found' });
+    const input = z.object({ checkoutToken: z.string().trim().min(8).max(500) }).parse(req.body);
+    const order = await prisma.order.findFirst({ where: { id: req.params.orderId, tenantId: req.tenant.id }, include: { tenant: { select: { id: true, isDemo: true, brandingJson: true } } } });
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    const affirm = affirmAvailability(order.tenant, order.tenant?.brandingJson?.paymentSettings || {}, affirmConfiguration());
+    if (!affirm.available) return res.status(403).json({ error: 'Affirm is not authorized for this tenant' });
+    if (order.paymentStatus === 'PAID' && order.affirmTransactionId) return res.json({ order, provider: 'AFFIRM', duplicate: true });
+    const authorization = await authorizeAndCaptureAffirm({ checkoutToken: input.checkoutToken, order });
+    const saved = await prisma.$transaction(async (tx) => {
+      const fresh = await tx.order.findUnique({ where: { id: order.id } });
+      if (fresh.paymentStatus === 'PAID') return fresh;
+      const updated = await tx.order.update({ where: { id: order.id }, data: { affirmCheckoutToken: input.checkoutToken, affirmTransactionId: authorization.id, paymentStatus: 'PAID', status: 'PAID' } });
+      await recordStoreSettlement(tx, { tenantId: order.tenantId, orderId: order.id, grossCents: order.totalCents, taxCents: 0, processorFeeCents: 0, currency: order.currency, source: 'affirm:capture', idempotencyKey: 'affirm-settlement:' + authorization.id });
+      return updated;
+    });
+    return res.json({ order: saved, provider: 'AFFIRM', transactionId: authorization.id });
+  } catch (error) { return next(error); }
+});
+
+router.get('/social-proof/recent', async (req, res, next) => {
+  try {
+    if (!req.tenant?.id) return res.status(404).json({ error: 'Tenant storefront not found' });
+    const tenant = await prisma.tenant.findUnique({ where: { id: req.tenant.id }, select: { id: true, isDemo: true, brandingJson: true } });
+    const config = tenant?.brandingJson?.socialProof || {};
+    if (tenant?.isDemo || tenant?.id !== 'tenant-moving-supplies' || !config.enabled) return res.json({ items: [], config: { enabled: false } });
+    const ageDays = Math.min(90, Math.max(1, Number(config.orderAgeDays || 30)));
+    const orders = await prisma.order.findMany({ where: { tenantId: tenant.id, status: { in: ['PAID','CONFIRMED','FULFILLED'] }, paymentStatus: 'PAID', refundedCents: 0, createdAt: { gte: new Date(Date.now() - ageDays * 86400000) } }, orderBy: { createdAt: 'desc' }, take: 12, select: { shippingProvince: true, shippingState: true, createdAt: true, items: { take: 1, select: { productName: true, quantity: true } } } });
+    const items = orders.filter((order) => order.items[0]).map((order) => ({ region: config.showCity === false ? null : (order.shippingProvince || order.shippingState || null), product: config.showProduct === false ? null : order.items[0].productName, quantity: config.showProduct === false ? null : order.items[0].quantity, occurredAt: order.createdAt }));
+    return res.set('Cache-Control', 'public, max-age=60, stale-while-revalidate=300').json({ items, config: { enabled: true, minimumDelaySeconds: Math.min(120, Math.max(20, Number(config.minimumDelaySeconds || 30))), displayDurationSeconds: Math.min(12, Math.max(4, Number(config.displayDurationSeconds || 7))), maximumPerSession: Math.min(5, Math.max(1, Number(config.maximumPerSession || 3))) } });
+  } catch (error) { return next(error); }
+});
 export default router;

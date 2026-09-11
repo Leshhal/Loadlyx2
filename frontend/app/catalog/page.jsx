@@ -1,4 +1,5 @@
 'use client';
+import StoreProductImage from '@/components/StoreProductImage';
 
 import { Suspense, useEffect, useMemo, useState } from 'react';
 import { getTenantSlug as resolveTenantSlug } from '@/lib/tenant';
@@ -235,9 +236,7 @@ function CatalogPageContent() {
                   <span className="badge">{product.category?.name || 'Uncategorized'}</span>
                   <div className="product-urgency">{(product.badges || []).filter((badge) => badge.badgeType !== 'PERCENTAGE' || product.salePriceCents).slice(0, 2).map((badge) => <span key={badge.id} className="badge badge-gold" title={badge.tooltip || ''}>{badge.label}</span>)}</div>
                   <Link className="product-image" href={`${tenantBase}/catalog/${product.slug}`} aria-label={`View ${product.name}`}>
-                    {product.primaryImage?.url ? (
-                      <img src={product.primaryImage.url} alt={product.primaryImage.altText || product.name} loading="lazy" />
-                    ) : <div style={{ height: '100%', display: 'grid', placeItems: 'center', color: '#8ca4d1' }}>No image</div>}
+                    <StoreProductImage product={product} className="product-image-inner"/>
                   </Link>
                   <div className="product-meta">
                     <div>
