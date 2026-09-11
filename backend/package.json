@@ -16,7 +16,8 @@
     "prisma:provision:yxe": "node prisma/provision_yxe_totes.js",
     "provision:test-accounts": "node scripts/provision-production-test-accounts.js",
     "test:integration:v3.2": "node scripts/v3_2_integration_smoke.js",
-    "launch:catalog:dry-run": "node scripts/launch-catalog-data.js"
+    "launch:catalog:dry-run": "node scripts/launch-catalog-data.js",
+    "provision:moving-supplies-admin": "node scripts/provision-moving-supplies-admin.js"
   },
   "prisma": {
     "seed": "node prisma/seed.js"
