@@ -57,6 +57,7 @@ export default function CommerceDashboard() {
       <Link className="btn secondary" href="/admin/manage/orders">Orders</Link>
       <Link className="btn secondary" href="/admin/tenant">Store settings & branding</Link>
       <Link className="btn secondary" href="/admin/payments">Payment connections</Link>
+      <Link className="btn secondary" href="/admin/billing">Subscription & billing</Link>
       <Link className="btn secondary" href="/admin/balance">Ledger & withdrawals</Link>
     </div></section>
   </main>;

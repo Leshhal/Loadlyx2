@@ -21,7 +21,7 @@ import { requireAuth } from '../middleware/requireauth.js';
 import { EmailDeliveryError, emailDeliveryReadiness, sendPasswordResetEmail, sendVerificationEmail } from '../services/emailService.js';
 import { validateTenantSlug } from '../lib/tenantSlug.js';
 import { clearRefreshCookie, readCookie, setRefreshCookie } from '../lib/authCookies.js';
-import { SUBSCRIPTION_PLANS } from '../config/plans.js';
+import { SUBSCRIPTION_PLANS, getCommercePlan } from '../config/plans.js';
 import { publishEvent } from '../services/eventBus.js';
 import { authorizationUrl, exchangeOAuthCode, oauthConfig, oauthReadiness, requireVerifiedOAuthIdentity } from '../services/oauthService.js';
 import { commerceBranding, finishCommerceProvisioning, normalizeBusinessType } from '../services/commerceProvisioning.js';
@@ -80,6 +80,8 @@ async function handleSignup(req, res) {
     if (acceptedTerms !== true) return res.status(400).json({ error: 'Terms must be accepted' });
     if (!role) return res.status(400).json({ error: 'Requested role is not allowed for self signup' });
     if (businessType && role !== 'TENANT_ADMIN') return res.status(400).json({ error: 'Business type requires tenant owner signup' });
+    const signupPlan = businessType === 'COMMERCE' ? getCommercePlan(req.body.planCode || 'STARTER') : SUBSCRIPTION_PLANS.STARTER;
+    if (!signupPlan) return res.status(400).json({ error: 'Choose a supported commerce plan' });
 
     const existingUser = await prisma.user.findUnique({ where: { email } });
     if (existingUser) return res.status(409).json({ error: 'User already exists' });
@@ -103,7 +105,7 @@ async function handleSignup(req, res) {
             slug: validation.slug,
             subdomain: validation.slug,
             email,
-            subscriptionPlan: 'starter',
+            subscriptionPlan: signupPlan.code.toLowerCase(),
             brandingJson: businessType === 'COMMERCE'
               ? commerceBranding(companyName.trim())
               : { theme: 'default', tenantPages: [], ...(businessType ? { businessType } : {}) },
@@ -116,11 +118,11 @@ async function handleSignup(req, res) {
         });
         if (businessType === 'COMMERCE') owner = await finishCommerceProvisioning(tx, tenant, owner);
         await Promise.all([
-          tx.commissionPolicy.create({ data: { scopeKey: `TENANT:${tenant.id}`, tenantId: tenant.id, storeCommissionBps: SUBSCRIPTION_PLANS.STARTER.commissionBps, marketplaceCommissionBps: SUBSCRIPTION_PLANS.STARTER.commissionBps } }),
-          tx.subscription.create({ data: { tenantId: tenant.id, planCode: 'STARTER', status: 'TRIALING', monthlyPriceCents: SUBSCRIPTION_PLANS.STARTER.monthlyPriceCents, currentPeriodStart: new Date(), currentPeriodEnd: new Date(Date.now() + 14 * 86400000) } }),
+          tx.commissionPolicy.create({ data: { scopeKey: `TENANT:${tenant.id}`, tenantId: tenant.id, storeCommissionBps: signupPlan.commissionBps, marketplaceCommissionBps: signupPlan.commissionBps } }),
+          tx.subscription.create({ data: { tenantId: tenant.id, planCode: signupPlan.code, status: 'TRIALING', monthlyPriceCents: signupPlan.monthlyPriceCents, ...(businessType === 'COMMERCE' ? {} : { currentPeriodStart: new Date(), currentPeriodEnd: new Date(Date.now() + 14 * 86400000) }) } }),
           tx.aiTenantConfig.create({ data: { tenantId: tenant.id, enabled: false, monthlyRequestLimit: 100, allowedModules: [] } }),
           tx.simulationConfig.create({ data: { scopeKey: `TENANT:${tenant.id}`, tenantId: tenant.id, enabled: false, businessHours: {} } }),
-          tx.auditEvent.create({ data: { actorUserId: owner.id, action: 'TENANT_PROVISIONED', entityType: 'TENANT', entityId: tenant.id, tenantId: tenant.id, afterJson: { slug: tenant.slug, role: owner.role, plan: 'STARTER', trialDays: 14, ...(businessType ? { businessType } : {}) } } })
+          tx.auditEvent.create({ data: { actorUserId: owner.id, action: 'TENANT_PROVISIONED', entityType: 'TENANT', entityId: tenant.id, tenantId: tenant.id, afterJson: { slug: tenant.slug, role: owner.role, plan: signupPlan.code, trialDays: businessType === 'COMMERCE' ? 30 : 14, ...(businessType ? { businessType, billingEnrollment: businessType === 'COMMERCE' ? 'NOT_STARTED' : 'LEGACY_TRIAL' } : {}) } } })
         ]);
         return owner;
       });

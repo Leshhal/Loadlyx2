@@ -4,6 +4,7 @@ import { env } from '../config/env.js';
 import { prisma } from '../db/prisma.js';
 import { recordMarketplaceSettlement, recordStoreSettlement } from '../services/ledgerService.js';
 import { validateStripeStoreSession } from '../services/commerceCheckoutPolicy.js';
+import { handleSubscriptionEvent } from '../services/subscriptionBilling.js';
 
 const router = Router();
 const stripe = env.stripeSecretKey ? new Stripe(env.stripeSecretKey) : null;
@@ -27,6 +28,7 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
   }
 
   try {
+    if (await handleSubscriptionEvent({ db: prisma, stripeClient: stripe, event })) return res.json({ received: true });
     switch (event.type) {
       case 'checkout.session.completed': {
 const session = event.data.object;

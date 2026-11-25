@@ -5,11 +5,12 @@ export const BUSINESS_TYPES = [
 ];
 
 export function signupPayload(form) {
-  const { passwordConfirmation, businessType, ...payload } = form;
+  const { passwordConfirmation, businessType, planCode, ...payload } = form;
   return {
     ...payload,
     tenantSlug: form.role === 'TENANT_ADMIN' ? form.tenantSlug || undefined : undefined,
-    businessType: form.role === 'TENANT_ADMIN' ? businessType : undefined
+    businessType: form.role === 'TENANT_ADMIN' ? businessType : undefined,
+    planCode: form.role === 'TENANT_ADMIN' && businessType === 'COMMERCE' ? planCode : undefined
   };
 }
 
@@ -37,6 +38,7 @@ export function commerceNavigation(user) {
     ['customers', 'Customers', '/admin/customers', 'users'],
     ['ledger', 'Financial ledger & withdrawals', '/admin/balance', 'chart'],
     ['payments', 'Payment connections', '/admin/payments', 'chart'],
+    ['payments', 'Subscription & billing', '/admin/billing', 'chart'],
     ['storefront', 'Store themes', '/admin/themes', 'store'],
     ['analytics', 'Store analytics', '/admin/dashboard#analytics', 'chart'],
     ['storefront', 'Store settings & branding', '/admin/tenant', 'store']

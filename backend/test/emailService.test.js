@@ -22,3 +22,11 @@ test('password reset explains expiry and single use', () => {
   assert.match(email.text, /expires in one hour/);
   assert.match(email.text, /only be used once/);
 });
+
+test('trial reminder identifies first charge date, monthly amount and cancellation path', () => {
+  const email = renderEmailTemplate('subscription-trial-ending', { name: 'Test Store', actionUrl: 'https://www.loadlyx.com/admin/billing', chargeDate: '2026-12-25', monthlyPrice: '29.00' });
+  assert.match(email.text, /29.00 CAD per month/);
+  assert.match(email.text, /2026-12-25/);
+  assert.match(email.text, /Cancel renewal before the trial ends/);
+  assert.match(email.text, /https:\/\/www.loadlyx.com\/admin\/billing/);
+});

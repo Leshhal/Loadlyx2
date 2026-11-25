@@ -115,6 +115,8 @@ test('commerce HTTP signup provisions one scoped owner and preserves verificatio
   assert.equal(created.token.userId, 'new-owner');
   assert.equal(created.shipping.tenantId, 'new-commerce');
   assert.equal(created.commissionPolicy.storeCommissionBps, 650);
+  assert.equal(created.subscription.monthlyPriceCents, 2900);
+  assert.equal(created.subscription.currentPeriodEnd, undefined);
   assert.equal(created.auditEvent.tenantId, 'new-commerce');
   assert.equal(created.auditEvent.afterJson.businessType, 'COMMERCE');
 

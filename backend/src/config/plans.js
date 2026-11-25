@@ -7,3 +7,13 @@ export const SUBSCRIPTION_PLANS = Object.freeze({
 export function getSubscriptionPlan(code) {
   return SUBSCRIPTION_PLANS[String(code || '').trim().toUpperCase()] || null;
 }
+
+export const COMMERCE_PLANS = Object.freeze({
+  STARTER: Object.freeze({ ...SUBSCRIPTION_PLANS.STARTER, monthlyPriceCents: 2900, annualPriceCents: null, currency: 'cad', features: ['Storefront and products', 'Orders and inventory', 'Customer management'], entitlements: { ...SUBSCRIPTION_PLANS.STARTER.entitlements, quotes: false } }),
+  GROWTH: Object.freeze({ ...SUBSCRIPTION_PLANS.GROWTH, monthlyPriceCents: 5900, annualPriceCents: null, currency: 'cad', features: ['Everything in Starter', 'Team access', 'Commerce analytics'], entitlements: { ...SUBSCRIPTION_PLANS.GROWTH.entitlements, quotes: false, dispatch: false, marketplace: false } }),
+  PROFESSIONAL: Object.freeze({ ...SUBSCRIPTION_PLANS.PROFESSIONAL, monthlyPriceCents: 9900, annualPriceCents: null, currency: 'cad', features: ['Everything in Growth', 'Advanced reporting', 'Workflow automation'], entitlements: { ...SUBSCRIPTION_PLANS.PROFESSIONAL.entitlements, quotes: false, dispatch: false, marketplace: false } })
+});
+
+export function getCommercePlan(code) {
+  return COMMERCE_PLANS[String(code || '').trim().toUpperCase()] || null;
+}

@@ -8,7 +8,7 @@ import { commercePathAllowed } from '../lib/commerce';
 
 const ADMIN_ROLES = new Set(['SUPER_ADMIN', 'PLATFORM_ADMIN', 'ADMIN', 'SUPPORT', 'TENANT_ADMIN']);
 const PLATFORM_ROLES = new Set(['SUPER_ADMIN', 'PLATFORM_ADMIN', 'ADMIN', 'SUPPORT']);
-const TENANT_ADMIN_PREFIXES = ['/admin/dashboard', '/admin/manage', '/admin/tenant', '/admin/themes', '/admin/seo', '/admin/customers', '/admin/balance', '/admin/payments'];
+const TENANT_ADMIN_PREFIXES = ['/admin/dashboard', '/admin/manage', '/admin/tenant', '/admin/themes', '/admin/seo', '/admin/customers', '/admin/balance', '/admin/payments', '/admin/billing'];
 
 export default function AdminGuard({ children }) {
   const router = useRouter();

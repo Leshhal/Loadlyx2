@@ -1,10 +1,16 @@
 import { Router } from 'express';
 import { prisma } from '../db/prisma.js';
 import { requireAuth, requirePlatformFinance, requirePlatformRole } from '../middleware/requireauth.js';
-import { SUBSCRIPTION_PLANS, getSubscriptionPlan } from '../config/plans.js';
+import { SUBSCRIPTION_PLANS, COMMERCE_PLANS, getCommercePlan, getSubscriptionPlan } from '../config/plans.js';
+import Stripe from 'stripe';
+import { env } from '../config/env.js';
+import { commerceProfile } from '../services/commerceAccess.js';
+import { commerceReadiness } from '../services/commerceReadiness.js';
+import { createRecurringCheckout, cancelRecurringSubscription } from '../services/subscriptionBilling.js';
 import { getCommissionPolicy, recordMarketplaceSettlement, recordPayout, recordRefund, recordSubscriptionPayment } from '../services/ledgerService.js';
 
 const router = Router();
+const stripe = env.stripeSecretKey ? new Stripe(env.stripeSecretKey) : null;
 
 function tenantAdminOnly(req, res, next) {
   if (!req.user?.tenantId || !['TENANT_ADMIN', 'SUPER_ADMIN', 'PLATFORM_ADMIN', 'ADMIN'].includes(req.user.role)) {
@@ -28,7 +34,8 @@ async function resolvePlan(code) {
   return getSubscriptionPlan(normalized);
 }
 
-router.get('/plans', async (_req, res) => {
+router.get('/plans', async (req, res) => {
+  if (req.query.businessType === 'COMMERCE') return res.json({ plans: Object.values(COMMERCE_PLANS), businessType: 'COMMERCE', interval: 'month', currency: 'cad' });
   const stored = await prisma.subscriptionPlan.findMany({ where: { isActive: true }, orderBy: { monthlyPriceCents: 'asc' } });
   return res.json({ plans: stored.length ? stored.map((plan) => ({ ...plan, features: plan.featuresJson, entitlements: plan.entitlementsJson })) : Object.values(SUBSCRIPTION_PLANS) });
 });
@@ -36,10 +43,27 @@ router.get('/plans', async (_req, res) => {
 router.get('/subscription', requireAuth, async (req, res) => {
   if (!req.user.tenantId) return res.status(403).json({ error: 'Tenant account required' });
   const subscription = await prisma.subscription.findUnique({ where: { tenantId: req.user.tenantId } });
-  return res.json({ subscription });
+  const tenant = await prisma.tenant.findUnique({ where: { id: req.user.tenantId } });
+  const checkoutAvailable = commerceReadiness(tenant, 0)?.ready === true;
+  return res.json({ subscription, billingConfigured: Boolean(stripe && env.stripeWebhookSecret), checkoutAvailable, trialDays: 30, mode: !stripe ? 'CONFIGURATION_REQUIRED' : env.stripeSecretKey.startsWith('sk_live_') ? 'LIVE' : 'TEST' });
+});
+
+router.post('/subscription/checkout', requireAuth, tenantAdminOnly, async (req, res, next) => {
+  try {
+    if (!stripe || !env.stripeWebhookSecret) return res.status(503).json({ error: 'Recurring billing requires Stripe and its webhook configuration' });
+    const tenant = await prisma.tenant.findUnique({ where: { id: req.user.tenantId } });
+    if (!tenant || tenant.isDemo || !commerceProfile(tenant)) return res.status(403).json({ error: 'Recurring commerce billing requires an eligible commerce tenant' });
+    if (!commerceReadiness(tenant, 0)?.ready) return res.status(409).json({ error: 'Trial enrollment is unavailable until commerce onboarding readiness is verified', code: 'COMMERCE_ONBOARDING_NOT_READY' });
+    const plan = getCommercePlan(req.body.planCode);
+    if (!plan) return res.status(400).json({ error: 'Choose a supported commerce plan' });
+    const result = await createRecurringCheckout({ db: prisma, stripeClient: stripe, tenant, plan, requestId: req.headers['idempotency-key'], frontendUrl: env.frontendUrl });
+    return res.json(result);
+  } catch (error) { return next(error); }
 });
 
 router.put('/subscription', requireAuth, tenantAdminOnly, async (req, res) => {
+  const tenant = await prisma.tenant.findUnique({ where: { id: req.user.tenantId } });
+  if (commerceProfile(tenant)) return res.status(409).json({ error: 'Use recurring billing checkout to select and pay for a commerce plan', code: 'SUBSCRIPTION_CHECKOUT_REQUIRED' });
   const plan = await resolvePlan(req.body.planCode);
   if (!plan) return res.status(400).json({ error: 'Invalid subscription plan' });
   const before = await prisma.subscription.findUnique({ where: { tenantId: req.user.tenantId } });
@@ -72,9 +96,14 @@ router.put('/subscription', requireAuth, tenantAdminOnly, async (req, res) => {
   return res.json({ subscription });
 });
 
-router.post('/subscription/cancel', requireAuth, tenantAdminOnly, async (req, res) => {
+router.post('/subscription/cancel', requireAuth, tenantAdminOnly, async (req, res, next) => {
+  try {
   const before = await prisma.subscription.findUnique({ where: { tenantId: req.user.tenantId } });
   if (!before) return res.status(404).json({ error: 'Subscription not found' });
+  if (before.providerSubscriptionId) {
+    if (!stripe) return res.status(503).json({ error: 'Stripe billing is not configured' });
+    return res.json({ subscription: await cancelRecurringSubscription({ db: prisma, stripeClient: stripe, tenantId: req.user.tenantId }) });
+  }
   const subscription = await prisma.$transaction(async (tx) => {
     const updated = await tx.subscription.update({ where: { tenantId: req.user.tenantId }, data: { cancelAtPeriodEnd: true } });
     await tx.auditEvent.create({ data: {
@@ -84,6 +113,7 @@ router.post('/subscription/cancel', requireAuth, tenantAdminOnly, async (req, re
     return updated;
   });
   return res.json({ subscription });
+  } catch (error) { return next(error); }
 });
 
 router.get('/admin/policies', requireAuth, requirePlatformRole, async (_req, res) => {

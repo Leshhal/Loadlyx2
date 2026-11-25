@@ -1,9 +1,10 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { authRequest } from '../../lib/auth';
 import { BUSINESS_TYPES, signupPayload } from '../../lib/commerce';
+import { COMMERCE_PLANS, commerceSignupSelection, monthlyPrice } from '../../lib/commercePlans';
 
 const roles = [
   ['MARKETPLACE_USER', 'Customer', 'Post your own loads, compare offers, shop, and track.'],
@@ -15,11 +16,15 @@ const roles = [
 export default function SignupPage() {
   const [form, setForm] = useState({
     fullName: '', email: '', password: '', passwordConfirmation: '', companyName: '',
-    tenantSlug: '', role: 'MARKETPLACE_USER', businessType: 'COMMERCE', acceptedTerms: false
+    tenantSlug: '', role: 'MARKETPLACE_USER', businessType: 'COMMERCE', planCode: 'STARTER', acceptedTerms: false
   });
   const [result, setResult] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const update = (key, value) => setForm((current) => ({ ...current, [key]: value }));
+  useEffect(() => {
+    const selection = commerceSignupSelection(window.location.search);
+    setForm((current) => ({ ...current, ...selection }));
+  }, []);
 
   async function submit(event) {
     event.preventDefault();
@@ -59,6 +64,12 @@ export default function SignupPage() {
           <select value={form.businessType} onChange={(event) => update('businessType', event.target.value)}>
             {BUSINESS_TYPES.map(([value, label]) => <option value={value} key={value}>{label}</option>)}
           </select>
+        </label> : null}
+        {form.role === 'TENANT_ADMIN' && form.businessType === 'COMMERCE' ? <label>Commerce plan
+          <select value={form.planCode} onChange={(event) => update('planCode', event.target.value)}>
+            {COMMERCE_PLANS.map((plan) => <option value={plan.code} key={plan.code}>{plan.name} — {monthlyPrice(plan.monthlyPriceCents)} CAD/month</option>)}
+          </select>
+          <small>After verifying your email, open Subscription &amp; billing to enroll with a card for 30 days free, then monthly billing until cancelled. Trial enrollment opens after onboarding readiness is verified.</small>
         </label> : null}
         <div className="lx-form-grid">
           <label>Full name<input required autoComplete="name" value={form.fullName} onChange={(event) => update('fullName', event.target.value)} /></label>
