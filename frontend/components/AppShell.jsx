@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -7,6 +7,7 @@ import ThemeToggle from './ThemeToggle';
 import { Icon } from './ui/LoadlyxUI';
 import { CommandPalette } from './ui/InteractiveUI';
 import { getStoredUser } from '../lib/auth';
+import { commerceNavigation, commerceProfile } from '../lib/commerce';
 
 const platformAdminNavigation = [
   ['Platform overview','/admin/platform','chart'],
@@ -84,15 +85,28 @@ const driverNavigation = [['Driver Home','/app/driver','route'],['Current load',
 export default function AppShell({ mode = 'tenant', children }) {
   const pathname = usePathname() || '/';
   const [open, setOpen] = useState(false); const [role, setRole] = useState(mode === 'admin' ? 'ADMIN' : 'TENANT_ADMIN'); const [paletteOpen, setPaletteOpen] = useState(false); const [paletteQuery, setPaletteQuery] = useState('');
-  useEffect(() => { setRole(getStoredUser()?.role || (mode === 'admin' ? 'ADMIN' : 'TENANT_ADMIN')); }, [mode]);
+  const [user, setUser] = useState(null);
+  useEffect(() => {
+    const storedUser = getStoredUser();
+    setUser(storedUser);
+    setRole(storedUser?.role || (mode === 'admin' ? 'ADMIN' : 'TENANT_ADMIN'));
+  }, [mode, pathname]);
   useEffect(() => { const handler = (event) => { if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); setPaletteOpen((value) => !value); } }; window.addEventListener('keydown', handler); return () => window.removeEventListener('keydown', handler); }, []);
-  const links = useMemo(() => { if (mode === 'admin') return role === 'TENANT_ADMIN' ? tenantAdminNavigation : platformAdminNavigation; if (role === 'MARKETPLACE_USER') return customerNavigation; if (role === 'BROKER') return brokerNavigation; if (role === 'CARRIER') return carrierNavigation; if (role === 'DRIVER') return driverNavigation; return tenantNavigation; }, [mode, role]);
+  const links = useMemo(() => {
+    if (role === 'TENANT_ADMIN' && commerceProfile(user)) return commerceNavigation(user);
+    if (mode === 'admin') return role === 'TENANT_ADMIN' ? tenantAdminNavigation : platformAdminNavigation;
+    if (role === 'MARKETPLACE_USER') return customerNavigation;
+    if (role === 'BROKER') return brokerNavigation;
+    if (role === 'CARRIER') return carrierNavigation;
+    if (role === 'DRIVER') return driverNavigation;
+    return tenantNavigation;
+  }, [mode, role, user]);
   const current = links.find(([, href]) => { const route = href.split('#')[0]; return pathname === route || pathname.startsWith(`${route}/`); })?.[0] || 'Workspace';
-  const workspaceLabel = mode === 'admin' ? 'Platform administration' : role === 'MARKETPLACE_USER' ? 'Loadlyx Connect customer' : role === 'BROKER' ? 'Loadlyx Connect broker' : role === 'CARRIER' ? 'Loadlyx Connect carrier' : role === 'DRIVER' ? 'Loadlyx Connect driver' : 'Tenant workspace';
+  const workspaceLabel = role === 'TENANT_ADMIN' && commerceProfile(user) ? 'Commerce workspace' : mode === 'admin' ? 'Platform administration' : role === 'MARKETPLACE_USER' ? 'Loadlyx Connect customer' : role === 'BROKER' ? 'Loadlyx Connect broker' : role === 'CARRIER' ? 'Loadlyx Connect carrier' : role === 'DRIVER' ? 'Loadlyx Connect driver' : 'Tenant workspace';
   const commandItems = links.map(([label, href, icon]) => ({ label, href, icon, description: `Open ${workspaceLabel.toLowerCase()}` }));
 
   return <div className={`lx-app-shell ${open ? 'is-open' : ''}`}>
-    <aside className="lx-sidebar" aria-label={`${workspaceLabel} navigation`}><a className="lx-sidebar-brand" href={mode === 'admin' ? (role === 'TENANT_ADMIN' ? '/admin/dashboard' : '/admin/platform') : '/app/dashboard'}><span className="brand-mark">{role === 'MARKETPLACE_USER' ? 'F' : 'L'}</span><span><strong>{role === 'MARKETPLACE_USER' ? 'Freight Exchange' : 'Loadlyx'}</strong><small>{role === 'MARKETPLACE_USER' ? 'Powered by Loadlyx' : mode === 'admin' ? 'Platform command' : workspaceLabel}</small></span></a><nav>{links.map(([label, href, icon]) => { const route = href.split('#')[0]; return <a key={href} href={href} onClick={() => setOpen(false)} className={pathname === route || pathname.startsWith(`${route}/`) ? 'active' : ''}><Icon name={icon} /><span>{label}</span></a>; })}</nav>{role === 'MARKETPLACE_USER' ? <div className="lx-locked-nav" aria-label="SaaS features unavailable for loadboard accounts"><span>Business workspace</span>{['CRM & quotes','Dispatch','Store management','Financial ledger'].map((label) => <div key={label}><Icon name="lock" /><span>{label}</span><small>Requires SaaS plan</small></div>)}</div> : null}<div className="lx-sidebar-foot"><div className="lx-system-status"><i />Workspace ready</div><span>{role?.replaceAll('_', ' ')}</span><a href={role === 'MARKETPLACE_USER' ? '/loadboard' : '/'}>View public site</a></div></aside>
+    <aside className="lx-sidebar" aria-label={`${workspaceLabel} navigation`}><a className="lx-sidebar-brand" href={mode === 'admin' ? (role === 'TENANT_ADMIN' ? '/admin/dashboard' : '/admin/platform') : '/app/dashboard'}><span className="brand-mark">{role === 'MARKETPLACE_USER' ? 'F' : 'L'}</span><span><strong>{role === 'MARKETPLACE_USER' ? 'Freight Exchange' : 'Loadlyx'}</strong><small>{role === 'MARKETPLACE_USER' ? 'Powered by Loadlyx' : mode === 'admin' ? 'Platform command' : workspaceLabel}</small></span></a><nav>{links.map(([label, href, icon]) => { const route = href.split('#')[0]; return <a key={href} href={href} onClick={() => setOpen(false)} className={pathname === route || pathname.startsWith(`${route}/`) ? 'active' : ''}><Icon name={icon} /><span>{label}</span></a>; })}</nav>{role === 'MARKETPLACE_USER' ? <div className="lx-locked-nav" aria-label="SaaS features unavailable for loadboard accounts"><span>Business workspace</span>{['CRM & quotes','Dispatch','Store management','Financial ledger'].map((label) => <div key={label}><Icon name="lock" /><span>{label}</span><small>Requires SaaS plan</small></div>)}</div> : null}<div className="lx-sidebar-foot"><div className="lx-system-status"><i />{commerceProfile(user) ? (commerceProfile(user).storefront?.status || 'SETUP_REQUIRED').replaceAll('_', ' ') : 'Workspace ready'}</div><span>{role?.replaceAll('_', ' ')}</span><a href={role === 'MARKETPLACE_USER' ? '/loadboard' : '/'}>View public site</a></div></aside>
     <div className="lx-app-main"><header className="lx-topbar"><button className="lx-menu-button" type="button" onClick={() => setOpen(!open)} aria-expanded={open} aria-label="Toggle navigation">â˜°</button><div><span className="lx-topbar-kicker">{workspaceLabel}</span><strong>{current}</strong></div><div className="lx-topbar-actions"><button className="lx-command-button" type="button" onClick={() => setPaletteOpen(true)} aria-label="Open workspace search"><Icon name="search" /><span>Search</span><kbd>Ctrl K</kbd></button><Link className="lx-icon-button" href="/resources" aria-label="Open help and resources">?</Link><ThemeToggle /></div></header><div className="lx-app-content">{children}</div></div>
     {open ? <button className="lx-shell-scrim" type="button" aria-label="Close navigation" onClick={() => setOpen(false)} /> : null}
     <CommandPalette open={paletteOpen} query={paletteQuery} onQueryChange={setPaletteQuery} onClose={() => { setPaletteOpen(false); setPaletteQuery(''); }} items={commandItems} />

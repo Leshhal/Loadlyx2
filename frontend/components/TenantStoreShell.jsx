@@ -3,6 +3,7 @@ import StoreCartLink from './StoreCartLink';
 import RecentOrderToast from './RecentOrderToast';
 
 function navigationFor(branding = {}) {
+  if (branding.businessType === 'COMMERCE') return [['Home', '/'], ['Shop', '/catalog']];
   if (branding.businessType === 'MOVING_SUPPLIES') return [
     ['Shop', '/catalog'], ['Moving Boxes', '/catalog?category=Moving%20Boxes'], ['Moving Supplies', '/catalog?category=Moving%20Supplies'], ['Hitch & Bike Racks', '/catalog?category=Bike%20Racks%20%2F%20Hitch%20%26%20Accessories'], ['Vehicle Wiring', '/catalog?category=Vehicle%20Wiring']
   ];

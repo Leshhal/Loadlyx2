@@ -5,6 +5,9 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { adminFetch } from '../../../lib/adminFetch';
 import { EmptyState, PageHeader, StatCard, StatusBadge } from '../../../components/ui/LoadlyxUI';
+import { getStoredUser } from '../../../lib/auth';
+import { commerceProfile } from '../../../lib/commerce';
+import CommerceDashboard from '../../../components/CommerceDashboard';
 
 function money(cents = 0) {
 return new Intl.NumberFormat('en-CA', {
@@ -53,7 +56,7 @@ return (
 );
 }
 
-export default function AdminDashboardPage() {
+function OperationsDashboardPage() {
 const router = useRouter();
 const [data, setData] = useState(null);
 const [error, setError] = useState('');
@@ -310,4 +313,15 @@ All loads
 </section>
 </main>
 );
+}
+
+export default function AdminDashboardPage() {
+  const [user, setUser] = useState(null);
+  const [resolved, setResolved] = useState(false);
+  useEffect(() => {
+    setUser(getStoredUser());
+    setResolved(true);
+  }, []);
+  if (!resolved) return <main className="container"><p role="status">Loading workspace…</p></main>;
+  return commerceProfile(user) ? <CommerceDashboard /> : <OperationsDashboardPage />;
 }

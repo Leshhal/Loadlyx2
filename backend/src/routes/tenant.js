@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { prisma } from '../db/prisma.js';
+import { publicStorefrontAvailable, tenantProfile } from '../services/commerceAccess.js';
 
 const router = Router();
 
@@ -13,6 +14,7 @@ slug: tenant.slug,
 subdomain: tenant.subdomain,
 primaryDomain: tenant.primaryDomain,
 subscriptionPlan: tenant.subscriptionPlan,
+tenantProfile: tenantProfile(tenant),
 isDemo: tenant.isDemo,
 branding: {
 logoUrl: branding.logoUrl || '',
@@ -70,7 +72,7 @@ where: { OR: [{ subdomain: slug }, { slug }] },
 include: { themeActivation: { include: { theme: true } } }
 });
 
-if (!tenant) {
+if (!tenant || !publicStorefrontAvailable(tenant)) {
 return res.status(404).json({ error: 'Tenant not found' });
 }
 
@@ -85,7 +87,7 @@ router.get('/public', async (req, res) => {
 try {
 let tenant = req.tenant || null;
 
-if (!tenant) {
+if (!tenant || !publicStorefrontAvailable(tenant)) {
 tenant = await prisma.tenant.findFirst({
 where: { isMaster: true },
 include: { themeActivation: { include: { theme: true } } }

@@ -1,10 +1,27 @@
-import { requireAuth, requireAdmin } from '../middleware/requireauth.js';
+import { requireAuth, requireAdmin, requirePlatformWrite } from '../middleware/requireauth.js';
+import { validateTenantSlug } from '../lib/tenantSlug.js';
+import { tenantProfile } from '../services/commerceAccess.js';
+import { commerceReadiness } from '../services/commerceReadiness.js';
 import { Router } from 'express';
 import { prisma } from '../db/prisma.js';
 
 const router = Router();
 router.use(requireAuth);
 router.use(requireAdmin);
+
+router.get('/commerce-onboarding', async (req, res, next) => {
+  try {
+    const tenantId = req.user.tenantId;
+    if (!tenantId) return res.status(403).json({ error: 'Tenant context required' });
+    const [tenant, productCount] = await Promise.all([
+      prisma.tenant.findUnique({ where: { id: tenantId } }),
+      prisma.product.count({ where: { tenantId, isActive: true, publicationStatus: 'ACTIVE' } })
+    ]);
+    const readiness = commerceReadiness(tenant, productCount);
+    if (!readiness) return res.status(404).json({ error: 'Commerce onboarding is not enabled for this business' });
+    return res.json(readiness);
+  } catch (error) { return next(error); }
+});
 
 function startOfToday() {
   const d = new Date();
@@ -76,6 +93,7 @@ function serializeTenantSettings(tenant) {
     slug: tenant.slug,
     subdomain: tenant.subdomain || '',
     primaryDomain: tenant.primaryDomain || '',
+    tenantProfile: tenantProfile(tenant),
     branding
   };
 }
@@ -240,8 +258,13 @@ router.put('/tenant-settings', async (req, res) => {
     if (!existing) return res.status(404).json({ error: 'Tenant not found' });
 
     const name = String(req.body?.name || '').trim();
-    const subdomain = String(req.body?.subdomain || '').trim();
+    const validation = validateTenantSlug(req.body?.subdomain);
+    if (!validation.ok) return res.status(400).json({ error: validation.error });
+    const subdomain = validation.slug;
     const primaryDomain = String(req.body?.primaryDomain || '').trim() || null;
+    if (primaryDomain !== existing.primaryDomain && !(primaryDomain === null && !existing.primaryDomain)) {
+      return res.status(409).json({ error: 'Custom domains require ownership verification before activation', code: 'DOMAIN_VERIFICATION_REQUIRED' });
+    }
     const branding = sanitizeBranding(req.body?.branding || {});
 
     if (!name) return res.status(400).json({ error: 'Tenant name is required' });
@@ -254,7 +277,7 @@ router.put('/tenant-settings', async (req, res) => {
         slug: existing.slug || slugify(subdomain),
         subdomain,
         primaryDomain,
-        brandingJson: branding
+        brandingJson: { ...(existing.brandingJson || {}), ...branding }
       }
     });
 
@@ -266,7 +289,7 @@ router.put('/tenant-settings', async (req, res) => {
 });
 
 // REST tenant management endpoints
-router.post('/tenant', async (req, res) => {
+router.post('/tenant', requirePlatformWrite, async (req, res) => {
   try {
     const name = String(req.body?.name || '').trim();
     const subdomain = String(req.body?.subdomain || '').trim();
@@ -297,6 +320,7 @@ router.post('/tenant', async (req, res) => {
 
 router.get('/tenant/:id', async (req, res) => {
   try {
+    if (req.user.tenantId !== req.params.id && !['SUPER_ADMIN', 'PLATFORM_ADMIN', 'ADMIN', 'SUPPORT'].includes(req.user.role)) return res.status(403).json({ error: 'Forbidden' });
     const tenant = await prisma.tenant.findUnique({ where: { id: req.params.id } });
     if (!tenant) return res.status(404).json({ error: 'Tenant not found' });
     res.json(serializeTenantSettings(tenant));
@@ -312,6 +336,7 @@ router.get('/tenant/subdomain/:subdomain', async (req, res) => {
       where: { OR: [{ subdomain: req.params.subdomain }, { slug: req.params.subdomain }] }
     });
     if (!tenant) return res.status(404).json({ error: 'Tenant not found' });
+    if (req.user.tenantId !== tenant.id && !['SUPER_ADMIN', 'PLATFORM_ADMIN', 'ADMIN', 'SUPPORT'].includes(req.user.role)) return res.status(403).json({ error: 'Forbidden' });
     res.json(serializeTenantSettings(tenant));
   } catch (error) {
     console.error('Admin tenant by subdomain error:', error);
@@ -319,7 +344,7 @@ router.get('/tenant/subdomain/:subdomain', async (req, res) => {
   }
 });
 
-router.put('/tenant/:id', async (req, res) => {
+router.put('/tenant/:id', requirePlatformWrite, async (req, res) => {
   try {
     const existing = await prisma.tenant.findUnique({ where: { id: req.params.id } });
     if (!existing) return res.status(404).json({ error: 'Tenant not found' });
@@ -340,7 +365,7 @@ router.put('/tenant/:id', async (req, res) => {
         slug: slugify(req.body?.slug || existing.slug || subdomain || name),
         subdomain,
         primaryDomain,
-        brandingJson: branding
+        brandingJson: { ...(existing.brandingJson || {}), ...branding }
       }
     });
 
@@ -354,6 +379,7 @@ router.put('/tenant/:id', async (req, res) => {
 router.get('/', async (req, res) => {
   try {
     const tenantId = req.user?.tenantId;
+    if (!tenantId) return res.status(403).json({ error: 'Tenant context required' });
     const dashboard = await buildDashboard(tenantId);
     res.json(dashboard);
   } catch (error) {

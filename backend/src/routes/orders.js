@@ -1,4 +1,3 @@
-import { resolveTenant } from '../lib/tenant.js';
 import { Router } from 'express';
 import Stripe from 'stripe';
 import { getCommissionPolicy, recordStoreSettlement } from '../services/ledgerService.js';
@@ -10,6 +9,7 @@ import { recordRefund } from '../services/ledgerService.js';
 import { capturePaypalOrder, createPaypalOrder, refundPaypalCapture } from '../services/paypalService.js';
 import { paypalAvailability, stripeAvailability } from '../services/tenantPaymentPolicy.js';
 import { affirmAvailability, affirmConfiguration, authorizeAndCaptureAffirm, buildAffirmCheckout } from '../services/affirmService.js';
+import { checkoutConfirmationHandler } from '../services/commerceCheckoutPolicy.js';
 
 const router = Router();
 const stripe = env.stripeSecretKey ? new Stripe(env.stripeSecretKey) : null;
@@ -178,41 +178,11 @@ router.post('/:id/refund', async (req, res) => {
   return res.json({ order: result, providerRefundId: providerRefund?.id || null, ledgerRecorded: Boolean(original) });
 });
 
-router.get('/checkout-session/:sessionId', async (req, res, next) => {
- try {
-  if (!stripe) {
-    return res.status(400).json({ error: 'Stripe is not configured.' });
-  }
-
-  const session = await stripe.checkout.sessions.retrieve(req.params.sessionId, {
-    expand: ['line_items', 'customer_details']
-  });
-
-  const order = session.metadata?.orderId
-    ? await prisma.order.findFirst({
-        where: { id: session.metadata.orderId, tenantId: req.tenant.id },
-        include: { items: true, tenant: { select: { slug: true, name: true } } }
-      })
-    : null;
-
-  res.json({
-    session: {
-      id: session.id,
-      paymentStatus: session.payment_status,
-      customerEmail: session.customer_email,
-      customerName: session.customer_details?.name,
-      amountTotal: session.amount_total,
-      currency: session.currency
-    },
-    order
-  });
- } catch (error) { next(error); }
-});
-
-
+router.get('/checkout-session/:sessionId', checkoutConfirmationHandler({ db: prisma, stripeClient: stripe }));
 
 router.post('/checkout', async (req, res, next) => {
  try {
+  if (!req.tenant?.id) return res.status(404).json({ error: 'Tenant storefront not found' });
   const schema = z.object({
     customerEmail: z.string().email(),
     customerName: z.string().optional(),
@@ -392,7 +362,7 @@ router.post('/paypal/:orderId/capture', async (req, res, next) => {
       const fresh = await tx.order.findUnique({ where: { id: order.id } });
       if (fresh.paymentStatus === 'PAID') return fresh;
       const updated = await tx.order.update({ where: { id: order.id }, data: { paypalCaptureId: capture.id, paymentStatus: 'PAID', status: 'PAID' } });
-      await recordStoreSettlement(tx, { tenantId: order.tenantId, orderId: order.id, grossCents: order.totalCents, taxCents: 0, processorFeeCents: 0, currency: order.currency, source: 'paypal:capture', idempotencyKey: `paypal-settlement:${capture.id}` });
+      await recordStoreSettlement(tx, updated, { taxCents: 0, processorFeeCents: 0 });
       return updated;
     });
     return res.json({ order: saved, provider: 'PAYPAL', captureId: capture.id });
@@ -424,7 +394,7 @@ router.post('/affirm/:orderId/authorize', async (req, res, next) => {
       const fresh = await tx.order.findUnique({ where: { id: order.id } });
       if (fresh.paymentStatus === 'PAID') return fresh;
       const updated = await tx.order.update({ where: { id: order.id }, data: { affirmCheckoutToken: input.checkoutToken, affirmTransactionId: authorization.id, paymentStatus: 'PAID', status: 'PAID' } });
-      await recordStoreSettlement(tx, { tenantId: order.tenantId, orderId: order.id, grossCents: order.totalCents, taxCents: 0, processorFeeCents: 0, currency: order.currency, source: 'affirm:capture', idempotencyKey: 'affirm-settlement:' + authorization.id });
+      await recordStoreSettlement(tx, updated, { taxCents: 0, processorFeeCents: 0 });
       return updated;
     });
     return res.json({ order: saved, provider: 'AFFIRM', transactionId: authorization.id });

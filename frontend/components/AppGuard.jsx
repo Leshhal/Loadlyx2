@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { adminFetch } from '@/lib/adminFetch';
 import { storeSession } from '@/lib/auth';
+import { commercePathAllowed } from '@/lib/commerce';
 
 export default function AppGuard({ children }) {
   const pathname = usePathname() || '/app/dashboard';
@@ -16,6 +17,10 @@ export default function AppGuard({ children }) {
       if (!response.ok) throw new Error('Authentication required');
       const data = await response.json();
       storeSession({ user: data.user, tenantSlug: data.user?.tenantSlug || undefined });
+      if (data.user?.role === 'TENANT_ADMIN' && !commercePathAllowed(data.user, pathname)) {
+        if (!cancelled) router.replace('/admin/dashboard');
+        return;
+      }
       if (!cancelled) setReady(true);
     }).catch(() => {
       if (cancelled) return;

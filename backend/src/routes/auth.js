@@ -24,6 +24,7 @@ import { clearRefreshCookie, readCookie, setRefreshCookie } from '../lib/authCoo
 import { SUBSCRIPTION_PLANS } from '../config/plans.js';
 import { publishEvent } from '../services/eventBus.js';
 import { authorizationUrl, exchangeOAuthCode, oauthConfig, oauthReadiness, requireVerifiedOAuthIdentity } from '../services/oauthService.js';
+import { commerceBranding, finishCommerceProvisioning, normalizeBusinessType } from '../services/commerceProvisioning.js';
 
 const router = Router();
 const OAUTH_PROVIDER_KEYS = ['google', 'apple', 'discord'];
@@ -66,12 +67,19 @@ async function handleSignup(req, res) {
     const { fullName, password, tenantSlug, companyName, acceptedTerms } = req.body;
     const email = normalizeEmail(req.body.email);
     const role = resolveRequestedRole(req.body.role, tenantSlug);
+    let businessType;
+    try {
+      businessType = normalizeBusinessType(req.body.businessType);
+    } catch (error) {
+      return res.status(400).json({ error: error.message });
+    }
 
     if (!email || !password) return res.status(400).json({ error: 'Email and password are required' });
     if (!fullName?.trim()) return res.status(400).json({ error: 'Full name is required' });
     if (String(password).length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
     if (acceptedTerms !== true) return res.status(400).json({ error: 'Terms must be accepted' });
     if (!role) return res.status(400).json({ error: 'Requested role is not allowed for self signup' });
+    if (businessType && role !== 'TENANT_ADMIN') return res.status(400).json({ error: 'Business type requires tenant owner signup' });
 
     const existingUser = await prisma.user.findUnique({ where: { email } });
     if (existingUser) return res.status(409).json({ error: 'User already exists' });
@@ -96,19 +104,23 @@ async function handleSignup(req, res) {
             subdomain: validation.slug,
             email,
             subscriptionPlan: 'starter',
-            brandingJson: { theme: 'default', tenantPages: [] }
+            brandingJson: businessType === 'COMMERCE'
+              ? commerceBranding(companyName.trim())
+              : { theme: 'default', tenantPages: [], ...(businessType ? { businessType } : {}) },
+            ...(businessType === 'COMMERCE' ? { stripePolicy: 'STRIPE_CONNECT', stripeEnabled: false, paypalEnabled: false } : {})
           }
         });
-        const owner = await tx.user.create({
+        let owner = await tx.user.create({
           data: { fullName: fullName.trim(), email, passwordHash, tenantId: tenant.id, role },
           include: { tenant: true }
         });
+        if (businessType === 'COMMERCE') owner = await finishCommerceProvisioning(tx, tenant, owner);
         await Promise.all([
           tx.commissionPolicy.create({ data: { scopeKey: `TENANT:${tenant.id}`, tenantId: tenant.id, storeCommissionBps: SUBSCRIPTION_PLANS.STARTER.commissionBps, marketplaceCommissionBps: SUBSCRIPTION_PLANS.STARTER.commissionBps } }),
           tx.subscription.create({ data: { tenantId: tenant.id, planCode: 'STARTER', status: 'TRIALING', monthlyPriceCents: SUBSCRIPTION_PLANS.STARTER.monthlyPriceCents, currentPeriodStart: new Date(), currentPeriodEnd: new Date(Date.now() + 14 * 86400000) } }),
           tx.aiTenantConfig.create({ data: { tenantId: tenant.id, enabled: false, monthlyRequestLimit: 100, allowedModules: [] } }),
           tx.simulationConfig.create({ data: { scopeKey: `TENANT:${tenant.id}`, tenantId: tenant.id, enabled: false, businessHours: {} } }),
-          tx.auditEvent.create({ data: { actorUserId: owner.id, action: 'TENANT_PROVISIONED', entityType: 'TENANT', entityId: tenant.id, tenantId: tenant.id, afterJson: { slug: tenant.slug, role: owner.role, plan: 'STARTER', trialDays: 14 } } })
+          tx.auditEvent.create({ data: { actorUserId: owner.id, action: 'TENANT_PROVISIONED', entityType: 'TENANT', entityId: tenant.id, tenantId: tenant.id, afterJson: { slug: tenant.slug, role: owner.role, plan: 'STARTER', trialDays: 14, ...(businessType ? { businessType } : {}) } } })
         ]);
         return owner;
       });
@@ -130,6 +142,7 @@ async function handleSignup(req, res) {
     });
   } catch (error) {
     console.error('Signup error:', error);
+    if (error.code === 'P2002') return res.status(409).json({ error: 'Email or tenant slug is already registered. Sign in or choose a different slug.', code: 'SIGNUP_CONFLICT' });
     if (error instanceof EmailDeliveryError) return res.status(503).json({ error: 'Email verification is temporarily unavailable. Please try again shortly.', code: error.code });
     return res.status(500).json({ error: 'Failed to create account' });
   }

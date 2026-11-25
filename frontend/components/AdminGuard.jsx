@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { logoutSession, storeSession } from '../lib/auth';
 import { adminFetch } from '../lib/adminFetch';
+import { commercePathAllowed } from '../lib/commerce';
 
 const ADMIN_ROLES = new Set(['SUPER_ADMIN', 'PLATFORM_ADMIN', 'ADMIN', 'SUPPORT', 'TENANT_ADMIN']);
 const PLATFORM_ROLES = new Set(['SUPER_ADMIN', 'PLATFORM_ADMIN', 'ADMIN', 'SUPPORT']);
@@ -30,6 +31,10 @@ export default function AdminGuard({ children }) {
           return;
         }
         storeSession({ user: data.user, tenantSlug: data.user?.tenantSlug || undefined });
+        if (role === 'TENANT_ADMIN' && !commercePathAllowed(data.user, pathname)) {
+          if (!cancelled) router.replace('/admin/dashboard');
+          return;
+        }
         if (PLATFORM_ROLES.has(role) && pathname === '/admin/dashboard') {
           if (!cancelled) router.replace('/admin/platform');
           return;

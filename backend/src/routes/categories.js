@@ -1,12 +1,15 @@
 import { Router } from 'express';
 import { prisma } from '../db/prisma.js';
 import { z } from 'zod';
-import { requireAuth, requireTenantAccess } from '../middleware/requireauth.js';
+import { requireAuth, requireTenantWrite, requireTenantAccess, optionalAuth } from '../middleware/requireauth.js';
+import { publicStorefrontAvailable } from '../services/commerceAccess.js';
 
 const router = Router();
 
-router.get('/', async (req, res) => {
+router.get('/', optionalAuth, async (req, res) => {
   if (!req.tenant?.id) return res.status(400).json({ error: 'Tenant context required' });
+  const ownerView = req.user?.tenantId === req.tenant.id && req.user?.role === 'TENANT_ADMIN';
+  if (!ownerView && !publicStorefrontAvailable(req.tenant)) return res.status(404).json({ error: 'Storefront is not published' });
   const categories = await prisma.category.findMany({
     where: { tenantId: req.tenant.id },
     include: { _count: { select: { products: true } } },
@@ -15,7 +18,7 @@ router.get('/', async (req, res) => {
   res.json(categories);
 });
 
-router.post('/', requireAuth, requireTenantAccess, async (req, res) => {
+router.post('/', requireAuth, requireTenantWrite, requireTenantAccess, async (req, res) => {
   const schema = z.object({
     name: z.string().min(2),
     slug: z.string().min(2),

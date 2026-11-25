@@ -4,7 +4,8 @@ import { prisma } from '../db/prisma.js';
 
 import { z } from 'zod';
 
-import { requireAuth } from '../middleware/requireauth.js';
+import { requireAuth, requireTenantWrite, optionalAuth } from '../middleware/requireauth.js';
+import { publicStorefrontAvailable } from '../services/commerceAccess.js';
 import { requireEntitlement } from '../middleware/requireEntitlement.js';
 
 
@@ -254,33 +255,15 @@ const includeProduct = {
 
 
 
-router.get('/', async (req, res) => {
+router.get('/', optionalAuth, async (req, res) => {
 try {
-const tenantSlug = req.headers['x-tenant-slug'];
 const { featured } = req.query;
-
-let where = {};
-
-if (tenantSlug) {
-const normalizedTenantSlug = String(tenantSlug).trim().toLowerCase();
-
-const tenant = await prisma.tenant.findFirst({
-where: {
-OR: [
-{ slug: normalizedTenantSlug },
-{ subdomain: normalizedTenantSlug }
-]
-}
-});
-
-if (!tenant) {
-return res.status(404).json({ error: 'Tenant not found' });
-}
-
-where.tenantId = tenant.id;
-where.publicationStatus = 'ACTIVE';
-where.isActive = true;
-}
+const tenantId = req.tenant?.id || req.user?.tenantId;
+if (!tenantId) return res.status(400).json({ error: 'Tenant context required' });
+const tenant = req.tenant || await prisma.tenant.findUnique({ where: { id: tenantId } });
+const ownerView = req.user?.tenantId === tenantId && req.user?.role === 'TENANT_ADMIN';
+if (!ownerView && !publicStorefrontAvailable(tenant)) return res.status(404).json({ error: 'Storefront is not published' });
+const where = { tenantId, ...(!ownerView ? { publicationStatus: 'ACTIVE', isActive: true } : {}) };
 
 if (featured === 'true') {
 where.featured = true;
@@ -303,7 +286,7 @@ res.status(500).json({ error: 'Failed to fetch products' });
 
 
 
-router.get('/slug/:slug', async (req, res) => {
+router.get('/slug/:slug', optionalAuth, async (req, res) => {
 try {
 const tenantId = req.tenant?.id || req.user?.tenantId;
 
@@ -311,10 +294,15 @@ if (!tenantId) {
 return res.status(401).json({ error: 'Unauthorized or tenant not found' });
 }
 
+const tenant = req.tenant || await prisma.tenant.findUnique({ where: { id: tenantId } });
+const ownerView = req.user?.tenantId === tenantId && req.user?.role === 'TENANT_ADMIN';
+if (!ownerView && !publicStorefrontAvailable(tenant)) return res.status(404).json({ error: 'Storefront is not published' });
+
 const product = await prisma.product.findFirst({
 where: {
 tenantId,
-slug: req.params.slug
+slug: req.params.slug,
+...(!ownerView ? { publicationStatus: 'ACTIVE', isActive: true } : {})
 },
 include: includeProduct
 });
@@ -333,7 +321,7 @@ res.status(500).json({ error: 'Failed to fetch product' });
 
 
 
-router.post('/', requireAuth, requireEntitlement('products'), async (req, res) => {
+router.post('/', requireAuth, requireTenantWrite, requireEntitlement('products'), async (req, res) => {
   const tenantId = writableTenantId(req);
   if (!tenantId) {
 
@@ -344,6 +332,7 @@ router.post('/', requireAuth, requireEntitlement('products'), async (req, res) =
 
 
   const data = productCreateSchema.parse(req.body);
+  if (data.categoryId && !await prisma.category.findFirst({ where: { id: data.categoryId, tenantId } })) return res.status(400).json({ error: 'Category does not belong to this tenant' });
 
   const normalizedImages = data.images.length
 
@@ -424,7 +413,7 @@ router.post('/', requireAuth, requireEntitlement('products'), async (req, res) =
 
 
 
-router.put('/:id', requireAuth, requireEntitlement('products'), async (req, res) => {
+router.put('/:id', requireAuth, requireTenantWrite, requireEntitlement('products'), async (req, res) => {
   const tenantId = writableTenantId(req);
   if (!tenantId) {
 
@@ -435,6 +424,7 @@ router.put('/:id', requireAuth, requireEntitlement('products'), async (req, res)
 
 
   const data = productUpdateSchema.parse(req.body);
+  if (data.categoryId && !await prisma.category.findFirst({ where: { id: data.categoryId, tenantId } })) return res.status(400).json({ error: 'Category does not belong to this tenant' });
 
 
 
@@ -546,12 +536,12 @@ router.put('/:id', requireAuth, requireEntitlement('products'), async (req, res)
 
 });
 
-router.delete('/:id', requireAuth, requireEntitlement('products'), async (req, res) => {
+router.delete('/:id', requireAuth, requireTenantWrite, requireEntitlement('products'), async (req, res) => {
   const tenantId = writableTenantId(req);
   if (!tenantId) return res.status(401).json({ error: 'Select a tenant before managing products' });
   const product = await prisma.product.findFirst({ where: { id: req.params.id, tenantId } });
   if (!product) return res.status(404).json({ error: 'Product not found' });
-  await prisma.product.delete({ where: { id: product.id } });
+  await prisma.product.update({ where: { id: product.id }, data: { isActive: false, publicationStatus: 'ARCHIVED' } });
   return res.status(204).end();
 });
 

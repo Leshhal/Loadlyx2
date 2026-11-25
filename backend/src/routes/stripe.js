@@ -3,6 +3,7 @@ import Stripe from 'stripe';
 import { env } from '../config/env.js';
 import { prisma } from '../db/prisma.js';
 import { recordMarketplaceSettlement, recordStoreSettlement } from '../services/ledgerService.js';
+import { validateStripeStoreSession } from '../services/commerceCheckoutPolicy.js';
 
 const router = Router();
 const stripe = env.stripeSecretKey ? new Stripe(env.stripeSecretKey) : null;
@@ -43,6 +44,11 @@ if (marketplaceTransactionId) {
 }
 
 if (orderId) {
+const existingOrder = await prisma.order.findUnique({ where: { id: orderId }, include: { tenant: { select: { isDemo: true, isActive: true } } } });
+if (!validateStripeStoreSession(existingOrder, session)) {
+  return res.status(409).json({ error: 'Stripe checkout confirmation does not match the stored order' });
+}
+if (existingOrder.paymentStatus === 'PAID' || existingOrder.paymentStatus === 'REFUNDED' || existingOrder.refundedCents > 0) break;
 let processorFeeCents = 0;
 if (session.payment_intent) {
   try {
@@ -53,8 +59,11 @@ if (session.payment_intent) {
   }
 }
 await prisma.$transaction(async (tx) => {
-  const order = await tx.order.update({
-    where: { id: orderId },
+  const freshOrder = await tx.order.findUnique({ where: { id: orderId }, include: { tenant: { select: { isDemo: true, isActive: true } } } });
+  if (!validateStripeStoreSession(freshOrder, session)) throw new Error('Stripe order confirmation changed during settlement');
+  if (freshOrder.paymentStatus === 'PAID' || freshOrder.paymentStatus === 'REFUNDED' || freshOrder.refundedCents > 0) return;
+  const claimed = await tx.order.updateMany({
+    where: { id: orderId, paymentStatus: 'PENDING', refundedCents: 0 },
     data: {
       status: 'PAID',
       paymentStatus: 'PAID',
@@ -62,6 +71,8 @@ await prisma.$transaction(async (tx) => {
       stripePaymentIntentId: session.payment_intent
     }
   });
+  if (claimed.count !== 1) return;
+  const order = await tx.order.findUnique({ where: { id: orderId } });
   const settlement = await recordStoreSettlement(tx, order, {
     taxCents: session.total_details?.amount_tax || 0,
     discountCents: session.total_details?.amount_discount || 0,
@@ -89,8 +100,8 @@ await prisma.$transaction(async (tx) => {
         const orderId = session.metadata?.orderId;
         const marketplaceTransactionId = session.metadata?.marketplaceTransactionId;
         if (marketplaceTransactionId) await prisma.marketplaceTransaction.updateMany({ where: { id: marketplaceTransactionId, status: { in: ['PAYMENT_PENDING','PAYMENT_PROCESSING'] } }, data: { status: 'PAYMENT_FAILED' } });
-        if (orderId) {
-          await prisma.order.update({ where: { id: orderId }, data: { status: 'CANCELED' } });
+        if (orderId && session.metadata?.tenantId) {
+          await prisma.order.updateMany({ where: { id: orderId, tenantId: session.metadata.tenantId, stripeCheckoutSessionId: session.id, paymentStatus: 'PENDING', status: 'PENDING' }, data: { status: 'CANCELED' } });
         }
         break;
       }

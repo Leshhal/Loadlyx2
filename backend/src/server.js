@@ -9,6 +9,7 @@ import morgan from 'morgan';
 import rateLimit from 'express-rate-limit';
 import { env, validateEnvironment } from './config/env.js';
 import { tenantMiddleware } from './middleware/tenant.js';
+import { requireCommerceCapability, requirePublishedStorefront } from './middleware/commerceAccess.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import healthRoutes from './routes/health.js';
 import categoryRoutes from './routes/categories.js';
@@ -98,6 +99,19 @@ app.use('/api/paypal', paypalRoutes);
 app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || '12mb' }));
 app.use(express.urlencoded({ extended: false, limit: '128kb' }));
 app.use(tenantMiddleware);
+for (const [path, capability] of [
+  ['/api/loads', 'loadboard'], ['/api/quotes', 'movingQuotes'],
+  ['/api/carriers', 'carrierTools'], ['/api/marketplace', 'marketplace'],
+  ['/api/loadlyx-one', 'marketplace'], ['/api/loadlyx-connect', 'marketplace'],
+  ['/api/operating-system', 'dispatch'], ['/api/operations-map', 'dispatch'],
+  ['/api/services', 'carrierTools'], ['/api/intelligence', 'loadboard'],
+  ['/api/rentals', 'rentals']
+]) app.use(path, ...requireCommerceCapability(capability));
+app.use('/api/orders', (req, res, next) => {
+  const publicRequest = (req.method === 'POST' && ['/checkout', '/analytics'].includes(req.path)) ||
+    (req.method === 'GET' && ['/payment-methods', '/social-proof/recent'].includes(req.path));
+  return publicRequest ? requirePublishedStorefront(req, res, next) : next();
+});
 app.use('/api/customers', requireAuth, adminCustomerRoutes);
 app.use('/api/balance', requireAuth, adminBalanceRoutes);
 app.use('/api/withdrawals', requireAuth, adminWithdrawalRoutes);
@@ -128,9 +142,10 @@ app.use('/api/orders', (req, res, next) => {
   const publicCheckoutConfirmation = req.method === 'GET' && req.path.startsWith('/checkout-session/');
   const publicPaymentMethods = req.method === 'GET' && req.path === '/payment-methods';
   const publicAffirmConfirmation = req.method === 'POST' && req.path.startsWith('/affirm/');
+  const publicPaypalConfirmation = req.method === 'POST' && /^\/paypal\/[^/]+\/capture$/.test(req.path);
   const publicSocialProof = req.method === 'GET' && req.path === '/social-proof/recent';
   const publicStoreAnalytics = req.method === 'POST' && req.path === '/analytics';
-  return publicStoreCheckout || publicCheckoutConfirmation || publicPaymentMethods || publicAffirmConfirmation || publicSocialProof || publicStoreAnalytics ? next() : requireAuth(req, res, next);
+  return publicStoreCheckout || publicCheckoutConfirmation || publicPaymentMethods || publicAffirmConfirmation || publicPaypalConfirmation || publicSocialProof || publicStoreAnalytics ? next() : requireAuth(req, res, next);
 }, orderRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/carriers', carrierRoutes);

@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import { env } from '../config/env.js';
+import { tenantProfile } from '../services/commerceAccess.js';
 
 export const ACCESS_TOKEN_TTL = '15m';
 export const REFRESH_TOKEN_DAYS = 30;
@@ -24,6 +25,7 @@ export function publicUser(user) {
     role: user.role,
     tenantId: user.tenantId,
     tenantSlug: user.tenant?.slug || null,
+    tenantProfile: tenantProfile(user.tenant),
     emailVerifiedAt: user.emailVerifiedAt,
     isActive: user.isActive
   };

@@ -5,6 +5,7 @@ import { env } from '../config/env.js';
 import { prisma } from '../db/prisma.js';
 import { paypalAvailability, stripeAvailability } from '../services/tenantPaymentPolicy.js';
 import { affirmAvailability, affirmConfiguration } from '../services/affirmService.js';
+import { requireTenantWrite } from '../middleware/requireauth.js';
 
 const router = Router();
 const stripe = env.stripeSecretKey ? new Stripe(env.stripeSecretKey) : null;
@@ -68,7 +69,7 @@ router.get('/', async (req, res) => {
   return res.json({ scope: 'TENANT', settings: { ...publicSettings({ paymentSettings: settings }), socialProof: tenant.brandingJson?.socialProof || { enabled: false, minimumDelaySeconds: 30, displayDurationSeconds: 7, orderAgeDays: 30, showCity: true, showProduct: true, maximumPerSession: 3 }, stripePolicy: tenant.stripePolicy, stripeEnabled: tenant.stripeEnabled, paypalEnabled: tenant.paypalEnabled }, stripe: stripeState, paypal: paypalState, affirm: { ...affirmState, publicKey: undefined } });
 });
 
-router.put('/', async (req, res) => {
+router.put('/', requireTenantWrite, async (req, res) => {
   const tenantId = tenantRequired(req, res); if (!tenantId) return;
   const input = z.object({ stripeEnabled: z.boolean().optional(), paypalEnabled: z.boolean().optional(), paypalMerchantId: z.string().trim().max(160).optional(), affirmEnabled: z.boolean().optional(), payoutMethod: z.enum(['STRIPE', 'PAYPAL', 'MANUAL']).optional(), payoutDestinationLabel: z.string().trim().max(160).optional(), socialProof: z.object({ enabled: z.boolean(), minimumDelaySeconds: z.number().int().min(20).max(120), displayDurationSeconds: z.number().int().min(4).max(12), orderAgeDays: z.number().int().min(1).max(90), showCity: z.boolean(), showProduct: z.boolean(), maximumPerSession: z.number().int().min(1).max(5) }).optional() }).parse(req.body);
   const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { id: true, isDemo: true, stripePolicy: true, brandingJson: true } });
@@ -84,7 +85,7 @@ router.put('/', async (req, res) => {
   return res.json({ settings: { ...publicSettings({ paymentSettings: updated }), ...saved } });
 });
 
-router.post('/stripe/onboarding', async (req, res) => {
+router.post('/stripe/onboarding', requireTenantWrite, async (req, res) => {
   const tenantId = tenantRequired(req, res); if (!tenantId) return;
   if (!stripe) return res.status(503).json({ error: 'The platform Stripe account is not configured yet' });
   const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { name: true, email: true, stripePolicy: true, brandingJson: true } });

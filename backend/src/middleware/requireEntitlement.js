@@ -1,5 +1,6 @@
 import { prisma } from '../db/prisma.js';
 import { getSubscriptionPlan } from '../config/plans.js';
+import { commerceCapabilityAllowed } from '../services/commerceAccess.js';
 
 const PLATFORM_ROLES = new Set(['SUPER_ADMIN','PLATFORM_ADMIN','ADMIN','SUPPORT']);
 
@@ -9,7 +10,8 @@ export function requireEntitlement(feature) {
       if (PLATFORM_ROLES.has(req.user?.role)) return next();
       if (!req.user?.tenantId && req.user?.role === 'MARKETPLACE_USER' && feature === 'ai') return next();
       if (!req.user?.tenantId) return res.status(403).json({ error: 'Tenant subscription required', code: 'TENANT_REQUIRED' });
-      const tenant = await prisma.tenant.findUnique({ where: { id: req.user.tenantId }, select: { subscriptionPlan: true, subscription: { select: { planCode: true, status: true } } } });
+      const tenant = await prisma.tenant.findUnique({ where: { id: req.user.tenantId }, select: { brandingJson: true, subscriptionPlan: true, subscription: { select: { planCode: true, status: true } } } });
+      if (!tenant || !commerceCapabilityAllowed(tenant, feature)) return res.status(403).json({ error: 'This module is not enabled for this business', code: 'CAPABILITY_REQUIRED', feature });
       const code = String(tenant?.subscription?.planCode || tenant?.subscriptionPlan || 'STARTER').toUpperCase();
       const stored = await prisma.subscriptionPlan.findUnique({ where: { code } });
       const entitlements = stored?.entitlementsJson || getSubscriptionPlan(code)?.entitlements || getSubscriptionPlan('STARTER').entitlements;

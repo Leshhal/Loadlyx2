@@ -51,6 +51,12 @@ export function requireAdmin(req, res, next) {
   next();
 }
 
+export function requireTenantWrite(req, res, next) {
+  if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+  if (!['SUPER_ADMIN', 'PLATFORM_ADMIN', 'ADMIN', 'TENANT_ADMIN'].includes(req.user.role)) return res.status(403).json({ error: 'Tenant administrator access required' });
+  return next();
+}
+
 export function requirePlatformRole(req, res, next) {
   if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
   if (!PLATFORM_ROLES.includes(req.user.role)) return res.status(403).json({ error: 'Forbidden' });
